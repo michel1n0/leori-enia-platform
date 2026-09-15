@@ -1,0 +1,6 @@
+com/leori/enia/initiative/domain/AIInitiative.class
+com/leori/enia/initiative/domain/AIInitiative$Builder.class
+com/leori/enia/initiative/domain/AIInitiativeId.class
+com/leori/enia/organization/domain/OrganizationId.class
+com/leori/enia/initiative/domain/RiskLevel.class
+com/leori/enia/initiative/domain/InitiativeStatus.class
