@@ -639,26 +639,24 @@ At completion, report:
 ## 23. Current Next Increment
 
 Unless explicitly changed by the project owner, the next planned
-increment is the PostgreSQL and Flyway persistence baseline:
+increment is PostgreSQL Testcontainers persistence integration:
 
-- PostgreSQL JDBC driver for production/development runtime
-- Flyway ownership of the database schema
-- `V1__create_ai_initiatives.sql` baseline migration
-- externalized PostgreSQL connection configuration
+- verification against a real PostgreSQL Testcontainer
+- committed `V1__create_ai_initiatives.sql` executed unchanged
 - Hibernate schema validation rather than schema generation
-- H2 retained as a test-only persistence adapter database
+- native UUID and fractional `Instant` verification
+- repository create and existing-row update round trips
+- H2 retained as the fast persistence adapter test database
 
 Constraints for this increment:
 
-- no Docker or Testcontainers yet
-- no committed database secrets
+- no transaction-boundary changes
+- no optimistic locking
+- no event publication or persistence
+- no application wiring
 - no REST
-- no Lombok
-- no messaging infrastructure
-- no event publication or event persistence; repository/event semantics
-  remain deferred
-- no changes to Domain or Application unless a demonstrated schema
-  compatibility issue requires it
+- no Domain or Application changes unless PostgreSQL demonstrates a
+  genuine incompatibility
 
 After implementation:
 
