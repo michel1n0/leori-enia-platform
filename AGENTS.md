@@ -639,15 +639,14 @@ At completion, report:
 ## 23. Current Next Increment
 
 Unless explicitly changed by the project owner, the next planned
-increment is the application layer for submission of an AI initiative:
+increment is the application layer for starting assessment of an AI
+initiative:
 
-- `SubmitAIInitiativeCommand`
-- `SubmitAIInitiativeUseCase`
+- `StartAssessmentAIInitiativeCommand`
+- `StartAssessmentAIInitiativeUseCase`
 - load the initiative through `AIInitiativeRepository`
-- call the existing aggregate submission behavior
-- save and return the submitted initiative
-- injected `java.time.Clock`
-- unit test with `Clock.fixed(...)`
+- call the existing aggregate assessment-start behavior
+- save and return the initiative under assessment
 - in-memory/fake repository for the test
 
 Constraints for this increment:
