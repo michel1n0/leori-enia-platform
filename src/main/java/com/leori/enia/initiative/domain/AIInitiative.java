@@ -57,15 +57,45 @@ import com.leori.enia.initiative.domain.event.AIInitiativeRejected;
           return new Builder();
       }
 
-      public void submit(Instant ocurredAt) {
+      public static AIInitiative rehydrate(
+              AIInitiativeId id,
+              OrganizationId organizationId,
+              String name,
+              String description,
+              InitiativeStatus status,
+              RiskLevel preliminaryRisk,
+              boolean usesPersonalData,
+              boolean impactsRights,
+              Instant createdAt
+      ) {
+          validateRestoredLifecycle(status, preliminaryRisk);
+
+          AIInitiative initiative = builder()
+                  .id(id)
+                  .organizationId(organizationId)
+                  .name(name)
+                  .description(description)
+                  .usesPersonalData(usesPersonalData)
+                  .impactsRights(impactsRights)
+                  .createdAt(createdAt)
+                  .build();
+
+          initiative.status = status;
+          initiative.preliminaryRisk = preliminaryRisk;
+
+          return initiative;
+      }
+
+      public void submit(Instant occurredAt) {
           requireStatus(InitiativeStatus.DRAFT);
+          Objects.requireNonNull(occurredAt, "OccurredAt is required");
 
           status = InitiativeStatus.SUBMITTED;
 
           registerEvent(
                   new AIInitiativeSubmitted(
                                 id,
-                                Objects.requireNonNull(ocurredAt)
+                                occurredAt
                   )
           );
       }
@@ -80,7 +110,7 @@ import com.leori.enia.initiative.domain.event.AIInitiativeRejected;
           requireStatus(InitiativeStatus.UNDER_ASSESSMENT);
 
           Objects.requireNonNull(riskLevel, "Risk level is required");
-          Objects.requireNonNull(occurredAt, "ocurredAt is required");
+          Objects.requireNonNull(occurredAt, "OccurredAt is required");
 
           if (riskLevel == RiskLevel.NOT_ASSESSED) {
               throw new IllegalArgumentException(
@@ -99,6 +129,37 @@ import com.leori.enia.initiative.domain.event.AIInitiativeRejected;
               throw new IllegalStateException(
                       "Expected initiative status %s but was %s"
                               .formatted(expected, status)
+              );
+          }
+      }
+
+      private static void validateRestoredLifecycle(
+              InitiativeStatus status,
+              RiskLevel preliminaryRisk
+      ) {
+          Objects.requireNonNull(status, "Initiative status is required");
+          Objects.requireNonNull(preliminaryRisk, "Preliminary risk is required");
+
+          switch (status) {
+              case DRAFT, SUBMITTED, UNDER_ASSESSMENT -> {
+                  if (preliminaryRisk != RiskLevel.NOT_ASSESSED) {
+                      throw new IllegalArgumentException(
+                              "Preliminary risk must be NOT_ASSESSED for status "
+                                      + status
+                      );
+                  }
+              }
+              case RISK_ASSESSED, APPROVED, REJECTED -> {
+                  if (preliminaryRisk == RiskLevel.NOT_ASSESSED) {
+                      throw new IllegalArgumentException(
+                              "Preliminary risk must be assessed for status "
+                                      + status
+                      );
+                  }
+              }
+              case EXPERIMENTATION, READY_FOR_DEPLOYMENT, ACTIVE, SUSPENDED,
+                   RETIRED -> throw new IllegalArgumentException(
+                      "Unsupported initiative status for rehydration: " + status
               );
           }
       }
@@ -211,7 +272,7 @@ import com.leori.enia.initiative.domain.event.AIInitiativeRejected;
 
       public void approve(Instant occurredAt) {
           requireStatus(InitiativeStatus.RISK_ASSESSED);
-          Objects.requireNonNull(occurredAt, "OcurredAt is required");
+          Objects.requireNonNull(occurredAt, "OccurredAt is required");
 
           status = InitiativeStatus.APPROVED;
 

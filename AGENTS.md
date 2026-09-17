@@ -639,19 +639,17 @@ At completion, report:
 ## 23. Current Next Increment
 
 Unless explicitly changed by the project owner, the next planned
-increment is the application layer for rejection of an AI initiative:
+increment is AI initiative domain persistence readiness:
 
-- `RejectAIInitiativeCommand`
-- `RejectAIInitiativeUseCase`
-- load the initiative through `AIInitiativeRepository`
-- call the existing aggregate rejection behavior
-- save and return the rejected initiative
-- injected `java.time.Clock`
-- unit test with `Clock.fixed(...)`
-- in-memory/fake repository for the test
+- explicit aggregate rehydration
+- lifecycle and preliminary-risk consistency validation
+- no historical domain event recreation during rehydration
+- atomic validation before submission mutation
+- focused domain tests for restoration and submission atomicity
 
 Constraints for this increment:
 
+- no persistence infrastructure
 - no JPA
 - no REST
 - no Spring annotations
