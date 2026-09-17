@@ -639,13 +639,13 @@ At completion, report:
 ## 23. Current Next Increment
 
 Unless explicitly changed by the project owner, the next planned
-increment is the application layer for approval of an AI initiative:
+increment is the application layer for rejection of an AI initiative:
 
-- `ApproveAIInitiativeCommand`
-- `ApproveAIInitiativeUseCase`
+- `RejectAIInitiativeCommand`
+- `RejectAIInitiativeUseCase`
 - load the initiative through `AIInitiativeRepository`
-- call the existing aggregate approval behavior
-- save and return the approved initiative
+- call the existing aggregate rejection behavior
+- save and return the rejected initiative
 - injected `java.time.Clock`
 - unit test with `Clock.fixed(...)`
 - in-memory/fake repository for the test
