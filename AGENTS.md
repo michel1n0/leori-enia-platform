@@ -639,21 +639,20 @@ At completion, report:
 ## 23. Current Next Increment
 
 Unless explicitly changed by the project owner, the next planned
-increment is AI initiative domain persistence readiness:
+increment is the AI initiative JPA persistence adapter:
 
-- explicit aggregate rehydration
-- lifecycle and preliminary-risk consistency validation
-- no historical domain event recreation during rehydration
-- atomic validation before submission mutation
-- focused domain tests for restoration and submission atomicity
+- separate JPA persistence entity
+- explicit domain/persistence mapper
+- infrastructure-only Spring Data repository
+- application repository port adapter
+- rehydration through `AIInitiative.rehydrate(...)`
+- H2 persistence tests
 
 Constraints for this increment:
 
-- no persistence infrastructure
-- no JPA
+- no PostgreSQL or Flyway yet
+- no production database configuration or credentials
 - no REST
-- no Spring annotations
-- no database
 - no Lombok
 - no messaging infrastructure
 - no changes to existing domain behavior unless required by a

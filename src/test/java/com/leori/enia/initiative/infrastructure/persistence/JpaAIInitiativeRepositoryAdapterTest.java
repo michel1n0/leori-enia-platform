@@ -1,0 +1,199 @@
+package com.leori.enia.initiative.infrastructure.persistence;
+
+import com.leori.enia.initiative.domain.AIInitiative;
+import com.leori.enia.initiative.domain.AIInitiativeId;
+import com.leori.enia.initiative.domain.InitiativeStatus;
+import com.leori.enia.initiative.domain.RiskLevel;
+import com.leori.enia.organization.domain.OrganizationId;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.SpringBootConfiguration;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.domain.EntityScan;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ContextConfiguration;
+
+import jakarta.persistence.EntityManager;
+import java.time.Instant;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+@DataJpaTest
+@ContextConfiguration(
+        classes = JpaAIInitiativeRepositoryAdapterTest.JpaTestConfiguration.class
+)
+@Import(JpaAIInitiativeRepositoryAdapterTest.AdapterConfiguration.class)
+class JpaAIInitiativeRepositoryAdapterTest {
+
+    private static final Instant CREATED_AT =
+            Instant.parse("2026-09-15T14:00:00Z");
+    private static final Instant SUBMITTED_AT =
+            Instant.parse("2026-09-16T13:00:00Z");
+    private static final Instant ASSESSED_AT =
+            Instant.parse("2026-09-16T14:00:00Z");
+    private static final Instant DECIDED_AT =
+            Instant.parse("2026-09-16T15:00:00Z");
+
+    @Autowired
+    private JpaAIInitiativeRepositoryAdapter adapter;
+
+    @Autowired
+    private EntityManager entityManager;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Test
+    void should_save_and_load_a_new_draft_initiative() {
+        AIInitiative initiative = createInitiative();
+
+        AIInitiative saved = adapter.save(initiative);
+        entityManager.flush();
+        entityManager.clear();
+        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow();
+
+        assertInitiativeState(saved, initiative);
+        assertInitiativeState(loaded, initiative);
+        assertTrue(saved.domainEvents().isEmpty());
+        assertTrue(loaded.domainEvents().isEmpty());
+    }
+
+    @Test
+    void should_save_and_load_a_risk_assessed_initiative() {
+        AIInitiative initiative = createRiskAssessedInitiative();
+
+        AIInitiative saved = adapter.save(initiative);
+        entityManager.flush();
+        entityManager.clear();
+        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow();
+
+        assertInitiativeState(saved, initiative);
+        assertInitiativeState(loaded, initiative);
+        assertTrue(saved.domainEvents().isEmpty());
+        assertTrue(loaded.domainEvents().isEmpty());
+
+        String status = jdbcTemplate.queryForObject(
+                "select status from ai_initiatives where id = ?",
+                String.class,
+                initiative.id().value()
+        );
+        String preliminaryRisk = jdbcTemplate.queryForObject(
+                "select preliminary_risk from ai_initiatives where id = ?",
+                String.class,
+                initiative.id().value()
+        );
+
+        assertEquals("RISK_ASSESSED", status);
+        assertEquals("HIGH", preliminaryRisk);
+    }
+
+    @Test
+    void should_save_and_load_an_approved_initiative() {
+        AIInitiative initiative = createRiskAssessedInitiative();
+        initiative.approve(DECIDED_AT);
+        initiative.clearDomainEvents();
+
+        AIInitiative saved = adapter.save(initiative);
+        entityManager.flush();
+        entityManager.clear();
+        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow();
+
+        assertEquals(InitiativeStatus.APPROVED, saved.status());
+        assertEquals(InitiativeStatus.APPROVED, loaded.status());
+        assertEquals(RiskLevel.HIGH, loaded.preliminaryRisk());
+        assertTrue(saved.domainEvents().isEmpty());
+        assertTrue(loaded.domainEvents().isEmpty());
+    }
+
+    @Test
+    void should_save_and_load_a_rejected_initiative() {
+        AIInitiative initiative = createRiskAssessedInitiative();
+        initiative.reject("Riesgo residual no aceptable", DECIDED_AT);
+        initiative.clearDomainEvents();
+
+        AIInitiative saved = adapter.save(initiative);
+        entityManager.flush();
+        entityManager.clear();
+        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow();
+
+        assertEquals(InitiativeStatus.REJECTED, saved.status());
+        assertEquals(InitiativeStatus.REJECTED, loaded.status());
+        assertEquals(RiskLevel.HIGH, loaded.preliminaryRisk());
+        assertTrue(saved.domainEvents().isEmpty());
+        assertTrue(loaded.domainEvents().isEmpty());
+    }
+
+    @Test
+    void should_return_empty_when_initiative_does_not_exist() {
+        assertFalse(adapter.findById(AIInitiativeId.generate()).isPresent());
+    }
+
+    private AIInitiative createRiskAssessedInitiative() {
+        AIInitiative initiative = createInitiative();
+        initiative.submit(SUBMITTED_AT);
+        initiative.startAssessment();
+        initiative.assessRisk(RiskLevel.HIGH, ASSESSED_AT);
+        initiative.clearDomainEvents();
+        return initiative;
+    }
+
+    private AIInitiative createInitiative() {
+        return AIInitiative.builder()
+                .id(AIInitiativeId.generate())
+                .organizationId(OrganizationId.generate())
+                .name("Detección de anomalías de asistencia")
+                .description("Detectar patrones anómalos de asistencia laboral")
+                .usesPersonalData(true)
+                .impactsRights(false)
+                .createdAt(CREATED_AT)
+                .build();
+    }
+
+    private void assertInitiativeState(
+            AIInitiative actual,
+            AIInitiative expected
+    ) {
+        assertEquals(expected.id(), actual.id());
+        assertEquals(expected.organizationId(), actual.organizationId());
+        assertEquals(expected.name(), actual.name());
+        assertEquals(expected.description(), actual.description());
+        assertEquals(expected.status(), actual.status());
+        assertEquals(expected.preliminaryRisk(), actual.preliminaryRisk());
+        assertEquals(expected.usesPersonalData(), actual.usesPersonalData());
+        assertEquals(expected.impactsRights(), actual.impactsRights());
+        assertEquals(expected.createdAt(), actual.createdAt());
+    }
+
+    @SpringBootConfiguration
+    @EnableAutoConfiguration
+    @EntityScan(basePackageClasses = AIInitiativeJpaEntity.class)
+    @EnableJpaRepositories(
+            basePackageClasses = SpringDataAIInitiativeRepository.class
+    )
+    static class JpaTestConfiguration {
+    }
+
+    @TestConfiguration
+    static class AdapterConfiguration {
+
+        @Bean
+        AIInitiativePersistenceMapper aiInitiativePersistenceMapper() {
+            return new AIInitiativePersistenceMapper();
+        }
+
+        @Bean
+        JpaAIInitiativeRepositoryAdapter jpaAIInitiativeRepositoryAdapter(
+                SpringDataAIInitiativeRepository repository,
+                AIInitiativePersistenceMapper mapper
+        ) {
+            return new JpaAIInitiativeRepositoryAdapter(repository, mapper);
+        }
+    }
+}
