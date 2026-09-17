@@ -5,6 +5,7 @@ import com.leori.enia.initiative.domain.AIInitiativeId;
 import com.leori.enia.initiative.domain.InitiativeStatus;
 import com.leori.enia.initiative.domain.RiskLevel;
 import com.leori.enia.organization.domain.OrganizationId;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
@@ -20,12 +21,13 @@ import org.springframework.test.context.ContextConfiguration;
 
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@DataJpaTest
+@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
 @ContextConfiguration(
         classes = JpaAIInitiativeRepositoryAdapterTest.JpaTestConfiguration.class
 )
@@ -49,6 +51,35 @@ class JpaAIInitiativeRepositoryAdapterTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private Flyway flyway;
+
+    @Test
+    void should_apply_the_flyway_baseline_migration() {
+        assertEquals("1", flyway.info().current().getVersion().toString());
+
+        Set<String> columns = Set.copyOf(jdbcTemplate.queryForList(
+                """
+                select lower(column_name)
+                from information_schema.columns
+                where lower(table_name) = 'ai_initiatives'
+                """,
+                String.class
+        ));
+
+        assertEquals(Set.of(
+                "id",
+                "organization_id",
+                "name",
+                "description",
+                "status",
+                "preliminary_risk",
+                "uses_personal_data",
+                "impacts_rights",
+                "created_at"
+        ), columns);
+    }
 
     @Test
     void should_save_and_load_a_new_draft_initiative() {

@@ -639,24 +639,26 @@ At completion, report:
 ## 23. Current Next Increment
 
 Unless explicitly changed by the project owner, the next planned
-increment is the AI initiative JPA persistence adapter:
+increment is the PostgreSQL and Flyway persistence baseline:
 
-- separate JPA persistence entity
-- explicit domain/persistence mapper
-- infrastructure-only Spring Data repository
-- application repository port adapter
-- rehydration through `AIInitiative.rehydrate(...)`
-- H2 persistence tests
+- PostgreSQL JDBC driver for production/development runtime
+- Flyway ownership of the database schema
+- `V1__create_ai_initiatives.sql` baseline migration
+- externalized PostgreSQL connection configuration
+- Hibernate schema validation rather than schema generation
+- H2 retained as a test-only persistence adapter database
 
 Constraints for this increment:
 
-- no PostgreSQL or Flyway yet
-- no production database configuration or credentials
+- no Docker or Testcontainers yet
+- no committed database secrets
 - no REST
 - no Lombok
 - no messaging infrastructure
-- no changes to existing domain behavior unless required by a
-  demonstrated issue
+- no event publication or event persistence; repository/event semantics
+  remain deferred
+- no changes to Domain or Application unless a demonstrated schema
+  compatibility issue requires it
 
 After implementation:
 
