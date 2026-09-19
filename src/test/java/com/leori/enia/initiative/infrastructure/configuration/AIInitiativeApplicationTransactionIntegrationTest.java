@@ -13,6 +13,7 @@ import com.leori.enia.initiative.application.StartAssessmentAIInitiativeUseCase;
 import com.leori.enia.initiative.application.SubmitAIInitiativeCommand;
 import com.leori.enia.initiative.application.SubmitAIInitiativeUseCase;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
+import com.leori.enia.initiative.application.port.LoadedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.AIInitiativeId;
 import com.leori.enia.initiative.domain.InitiativeStatus;
@@ -44,6 +45,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -115,7 +117,7 @@ class AIInitiativeApplicationTransactionIntegrationTest {
         // Deliberately bypass the use-case transaction: Spring Data owns this
         // transaction and translates the PostgreSQL failure through the adapter.
         assertThrows(DataIntegrityViolationException.class,
-                () -> repository.delegate.save(initiative));
+                () -> repository.delegate.create(initiative));
 
         assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
         assertEquals(0, jdbc.queryForObject(
@@ -211,7 +213,7 @@ class AIInitiativeApplicationTransactionIntegrationTest {
             initiative.assessRisk(RiskLevel.HIGH, NOW);
         }
         // Seed in an independent, already committed repository transaction.
-        return repository.delegate.save(initiative);
+        return repository.delegate.create(initiative);
     }
 
     private AIInitiative execute(Operation operation, AIInitiative before) {
@@ -290,17 +292,26 @@ class AIInitiativeApplicationTransactionIntegrationTest {
         }
 
         @Override
-        public Optional<AIInitiative> findById(AIInitiativeId id) {
+        public Optional<LoadedAIInitiative> findById(AIInitiativeId id) {
             loadTransaction = currentTransaction();
             loads++;
             return delegate.findById(id);
         }
 
         @Override
-        public AIInitiative save(AIInitiative initiative) {
+        public AIInitiative create(AIInitiative initiative) {
+            return observeWrite(initiative, () -> delegate.create(initiative));
+        }
+
+        @Override
+        public AIInitiative save(LoadedAIInitiative loaded) {
+            return observeWrite(loaded.initiative(), () -> delegate.save(loaded));
+        }
+
+        private AIInitiative observeWrite(AIInitiative initiative, Supplier<AIInitiative> write) {
             saveTransaction = currentTransaction();
             saves++;
-            AIInitiative result = delegate.save(initiative);
+            AIInitiative result = write.get();
             entityManager.flush();
             savedId = result.id();
             flushedStatus = jdbc.queryForObject(

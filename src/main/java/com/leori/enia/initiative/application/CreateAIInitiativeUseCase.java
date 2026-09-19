@@ -36,6 +36,6 @@ public class CreateAIInitiativeUseCase {
                 .createdAt(clock.instant())
                 .build();
 
-        return repository.save(initiative);
+        return repository.create(initiative);
     }
 }

@@ -1,6 +1,7 @@
 package com.leori.enia.initiative.infrastructure.persistence;
 
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
+import com.leori.enia.initiative.application.port.LoadedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.AIInitiativeId;
 
@@ -26,14 +27,23 @@ public final class JpaAIInitiativeRepositoryAdapter
     }
 
     @Override
-    public AIInitiative save(AIInitiative initiative) {
-        AIInitiativeJpaEntity entity = mapper.toEntity(initiative);
+    public AIInitiative create(AIInitiative initiative) {
+        // A null version makes Spring Data use persist, even with an assigned ID.
+        AIInitiativeJpaEntity entity = mapper.toEntity(initiative, null);
         AIInitiativeJpaEntity savedEntity = repository.save(entity);
         return mapper.toDomain(savedEntity);
     }
 
     @Override
-    public Optional<AIInitiative> findById(AIInitiativeId id) {
-        return repository.findById(id.value()).map(mapper::toDomain);
+    public AIInitiative save(LoadedAIInitiative loaded) {
+        // Never replace the caller's expected version with a freshly read one.
+        AIInitiativeJpaEntity entity = mapper.toEntity(loaded.initiative(), loaded.version());
+        AIInitiativeJpaEntity savedEntity = repository.save(entity);
+        return mapper.toDomain(savedEntity);
+    }
+
+    @Override
+    public Optional<LoadedAIInitiative> findById(AIInitiativeId id) {
+        return repository.findById(id.value()).map(mapper::toLoaded);
     }
 }

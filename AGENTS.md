@@ -638,21 +638,21 @@ At completion, report:
 
 ## 23. Current Next Increment
 
-The current increment is AI Initiative Application Transaction Boundary:
+The current increment is AI Initiative Optimistic Locking:
 
-- one transaction per state-changing use-case execution
-- Domain and Application remain framework-independent
-- transaction mechanism belongs to infrastructure/configuration
-- explicit production composition of transactional use cases
-- PostgreSQL integration verification of commit and rollback
-- existing Domain, Application, H2, and PostgreSQL tests retained
+- stale writes must be rejected rather than silently overwriting newer state
+- loaded revisions must survive the Domain/persistence mapping boundary
+- Domain remains persistence-ignorant; Application remains framework-independent
+- V1 remains immutable; version schema changes belong in V2
+- PostgreSQL concurrency verification is required
+- Commit 13 transaction boundary remains unchanged
+- existing Domain, Application, H2, PostgreSQL, and transaction tests retained
 
 Constraints for this increment:
 
-- no optimistic locking yet
-- no domain-event publication or persistence
 - no REST
-- no changes to the V1 migration or database schema
+- no domain-event publication
+- no automatic retries or pessimistic/distributed locking
 
 After implementation:
 

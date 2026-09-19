@@ -2,6 +2,7 @@ package com.leori.enia.initiative.application;
 
 import com.leori.enia.initiative.application.exception.AIInitiativeNotFoundException;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
+import com.leori.enia.initiative.application.port.LoadedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 
 import java.util.Objects;
@@ -25,13 +26,14 @@ public class StartAssessmentAIInitiativeUseCase {
                 "Start assessment AI initiative command is required"
         );
 
-        AIInitiative initiative = repository.findById(command.initiativeId())
+        LoadedAIInitiative loaded = repository.findById(command.initiativeId())
                 .orElseThrow(() -> new AIInitiativeNotFoundException(
                         command.initiativeId()
                 ));
+        AIInitiative initiative = loaded.initiative();
 
         initiative.startAssessment();
 
-        return repository.save(initiative);
+        return repository.save(loaded);
     }
 }

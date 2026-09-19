@@ -57,7 +57,8 @@ class JpaAIInitiativeRepositoryAdapterTest {
 
     @Test
     void should_apply_the_flyway_baseline_migration() {
-        assertEquals("1", flyway.info().current().getVersion().toString());
+        assertEquals("1", flyway.info().applied()[0].getVersion().toString());
+        assertEquals("2", flyway.info().current().getVersion().toString());
 
         Set<String> columns = Set.copyOf(jdbcTemplate.queryForList(
                 """
@@ -77,7 +78,8 @@ class JpaAIInitiativeRepositoryAdapterTest {
                 "preliminary_risk",
                 "uses_personal_data",
                 "impacts_rights",
-                "created_at"
+                "created_at",
+                "version"
         ), columns);
     }
 
@@ -85,10 +87,10 @@ class JpaAIInitiativeRepositoryAdapterTest {
     void should_save_and_load_a_new_draft_initiative() {
         AIInitiative initiative = createInitiative();
 
-        AIInitiative saved = adapter.save(initiative);
+        AIInitiative saved = adapter.create(initiative);
         entityManager.flush();
         entityManager.clear();
-        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow();
+        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow().initiative();
 
         assertInitiativeState(saved, initiative);
         assertInitiativeState(loaded, initiative);
@@ -100,10 +102,10 @@ class JpaAIInitiativeRepositoryAdapterTest {
     void should_save_and_load_a_risk_assessed_initiative() {
         AIInitiative initiative = createRiskAssessedInitiative();
 
-        AIInitiative saved = adapter.save(initiative);
+        AIInitiative saved = adapter.create(initiative);
         entityManager.flush();
         entityManager.clear();
-        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow();
+        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow().initiative();
 
         assertInitiativeState(saved, initiative);
         assertInitiativeState(loaded, initiative);
@@ -131,10 +133,10 @@ class JpaAIInitiativeRepositoryAdapterTest {
         initiative.approve(DECIDED_AT);
         initiative.clearDomainEvents();
 
-        AIInitiative saved = adapter.save(initiative);
+        AIInitiative saved = adapter.create(initiative);
         entityManager.flush();
         entityManager.clear();
-        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow();
+        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow().initiative();
 
         assertEquals(InitiativeStatus.APPROVED, saved.status());
         assertEquals(InitiativeStatus.APPROVED, loaded.status());
@@ -149,10 +151,10 @@ class JpaAIInitiativeRepositoryAdapterTest {
         initiative.reject("Riesgo residual no aceptable", DECIDED_AT);
         initiative.clearDomainEvents();
 
-        AIInitiative saved = adapter.save(initiative);
+        AIInitiative saved = adapter.create(initiative);
         entityManager.flush();
         entityManager.clear();
-        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow();
+        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow().initiative();
 
         assertEquals(InitiativeStatus.REJECTED, saved.status());
         assertEquals(InitiativeStatus.REJECTED, loaded.status());

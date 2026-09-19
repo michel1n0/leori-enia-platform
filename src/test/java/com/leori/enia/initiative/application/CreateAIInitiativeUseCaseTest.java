@@ -1,6 +1,7 @@
 package com.leori.enia.initiative.application;
 
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
+import com.leori.enia.initiative.application.port.LoadedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.AIInitiativeId;
 import com.leori.enia.initiative.domain.InitiativeStatus;
@@ -60,16 +61,22 @@ class CreateAIInitiativeUseCaseTest {
         private final List<AIInitiative> initiatives = new ArrayList<>();
 
         @Override
-        public AIInitiative save(AIInitiative initiative) {
+        public AIInitiative create(AIInitiative initiative) {
             initiatives.add(initiative);
             return initiative;
         }
 
         @Override
-        public Optional<AIInitiative> findById(AIInitiativeId id) {
+        public AIInitiative save(LoadedAIInitiative loaded) {
+            throw new AssertionError("Creation must not update an existing initiative");
+        }
+
+        @Override
+        public Optional<LoadedAIInitiative> findById(AIInitiativeId id) {
             return initiatives.stream()
                     .filter(initiative -> initiative.id().equals(id))
-                    .findFirst();
+                    .findFirst()
+                    .map(initiative -> new LoadedAIInitiative(initiative, 0));
         }
 
         List<AIInitiative> savedInitiatives() {

@@ -1,5 +1,6 @@
 package com.leori.enia.initiative.infrastructure.persistence;
 
+import com.leori.enia.initiative.application.port.LoadedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.AIInitiativeId;
 import com.leori.enia.organization.domain.OrganizationId;
@@ -8,7 +9,7 @@ import org.springframework.stereotype.Component;
 @Component
 class AIInitiativePersistenceMapper {
 
-    AIInitiativeJpaEntity toEntity(AIInitiative initiative) {
+    AIInitiativeJpaEntity toEntity(AIInitiative initiative, Long version) {
         return new AIInitiativeJpaEntity(
                 initiative.id().value(),
                 initiative.organizationId().value(),
@@ -18,8 +19,13 @@ class AIInitiativePersistenceMapper {
                 initiative.preliminaryRisk(),
                 initiative.usesPersonalData(),
                 initiative.impactsRights(),
-                initiative.createdAt()
+                initiative.createdAt(),
+                version
         );
+    }
+
+    LoadedAIInitiative toLoaded(AIInitiativeJpaEntity entity) {
+        return new LoadedAIInitiative(toDomain(entity), entity.version());
     }
 
     AIInitiative toDomain(AIInitiativeJpaEntity entity) {

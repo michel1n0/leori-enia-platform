@@ -7,7 +7,16 @@ import java.util.Optional;
 
 public interface AIInitiativeRepository {
 
-    AIInitiative save(AIInitiative initiative);
+    /** Inserts a new initiative. An existing ID must not be overwritten. */
+    AIInitiative create(AIInitiative initiative);
 
-    Optional<AIInitiative> findById(AIInitiativeId id);
+    /**
+     * Saves changes only if the stored version still matches the loaded version.
+     * A stale or deleted row must fail, never be overwritten or reinserted.
+     * Reload explicitly before a subsequent edit; this does not advance the
+     * supplied revision. Implementations may report conflicts at commit time.
+     */
+    AIInitiative save(LoadedAIInitiative loaded);
+
+    Optional<LoadedAIInitiative> findById(AIInitiativeId id);
 }

@@ -2,6 +2,7 @@ package com.leori.enia.initiative.application;
 
 import com.leori.enia.initiative.application.exception.AIInitiativeNotFoundException;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
+import com.leori.enia.initiative.application.port.LoadedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.AIInitiativeId;
 import com.leori.enia.initiative.domain.InitiativeStatus;
@@ -188,7 +189,14 @@ class RejectAIInitiativeUseCaseTest {
         }
 
         @Override
-        public AIInitiative save(AIInitiative initiative) {
+        public AIInitiative create(AIInitiative initiative) {
+            throw new AssertionError("Lifecycle changes must use the loaded revision");
+        }
+
+        @Override
+        public AIInitiative save(LoadedAIInitiative loaded) {
+            assertEquals(7L, loaded.version(), "Must preserve the loaded revision");
+            AIInitiative initiative = loaded.initiative();
             initiatives.put(initiative.id(), initiative);
             savedInitiative = initiative;
             saveCount++;
@@ -196,8 +204,9 @@ class RejectAIInitiativeUseCaseTest {
         }
 
         @Override
-        public Optional<AIInitiative> findById(AIInitiativeId id) {
-            return Optional.ofNullable(initiatives.get(id));
+        public Optional<LoadedAIInitiative> findById(AIInitiativeId id) {
+            return Optional.ofNullable(initiatives.get(id))
+                    .map(initiative -> new LoadedAIInitiative(initiative, 7));
         }
 
         AIInitiative savedInitiative() {

@@ -8,6 +8,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -19,6 +20,10 @@ class AIInitiativeJpaEntity {
     @Id
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
+
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
 
     @Column(name = "organization_id", nullable = false)
     private UUID organizationId;
@@ -58,7 +63,8 @@ class AIInitiativeJpaEntity {
             RiskLevel preliminaryRisk,
             boolean usesPersonalData,
             boolean impactsRights,
-            Instant createdAt
+            Instant createdAt,
+            Long version
     ) {
         this.id = id;
         this.organizationId = organizationId;
@@ -69,10 +75,15 @@ class AIInitiativeJpaEntity {
         this.usesPersonalData = usesPersonalData;
         this.impactsRights = impactsRights;
         this.createdAt = createdAt;
+        this.version = version;
     }
 
     UUID id() {
         return id;
+    }
+
+    Long version() {
+        return version;
     }
 
     UUID organizationId() {

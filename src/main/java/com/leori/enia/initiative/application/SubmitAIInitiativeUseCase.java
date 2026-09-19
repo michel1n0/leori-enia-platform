@@ -2,6 +2,7 @@ package com.leori.enia.initiative.application;
 
 import com.leori.enia.initiative.application.exception.AIInitiativeNotFoundException;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
+import com.leori.enia.initiative.application.port.LoadedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 
 import java.time.Clock;
@@ -26,13 +27,14 @@ public class SubmitAIInitiativeUseCase {
     public AIInitiative execute(SubmitAIInitiativeCommand command) {
         Objects.requireNonNull(command, "Submit AI initiative command is required");
 
-        AIInitiative initiative = repository.findById(command.initiativeId())
+        LoadedAIInitiative loaded = repository.findById(command.initiativeId())
                 .orElseThrow(() -> new AIInitiativeNotFoundException(
                         command.initiativeId()
                 ));
+        AIInitiative initiative = loaded.initiative();
 
         initiative.submit(clock.instant());
 
-        return repository.save(initiative);
+        return repository.save(loaded);
     }
 }

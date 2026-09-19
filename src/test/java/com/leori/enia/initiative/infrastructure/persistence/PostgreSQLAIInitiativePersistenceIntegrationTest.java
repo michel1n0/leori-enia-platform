@@ -1,5 +1,6 @@
 package com.leori.enia.initiative.infrastructure.persistence;
 
+import com.leori.enia.initiative.application.port.LoadedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.AIInitiativeId;
 import com.leori.enia.initiative.domain.InitiativeStatus;
@@ -78,7 +79,8 @@ class PostgreSQLAIInitiativePersistenceIntegrationTest {
 
     @Test
     void should_apply_v1_with_postgresql_native_types() {
-        assertEquals("1", flyway.info().current().getVersion().toString());
+        assertEquals("1", flyway.info().applied()[0].getVersion().toString());
+        assertEquals("2", flyway.info().current().getVersion().toString());
 
         Integer tableCount = jdbcTemplate.queryForObject(
                 """
@@ -110,6 +112,7 @@ class PostgreSQLAIInitiativePersistenceIntegrationTest {
                 }
         );
 
+        assertEquals("bigint", columnTypes.get("version"));
         assertEquals("uuid", columnTypes.get("id"));
         assertEquals("uuid", columnTypes.get("organization_id"));
         assertEquals("character varying", columnTypes.get("status"));
@@ -123,9 +126,9 @@ class PostgreSQLAIInitiativePersistenceIntegrationTest {
     void should_round_trip_a_draft_with_uuid_and_fractional_instant() {
         AIInitiative initiative = createInitiative();
 
-        AIInitiative saved = adapter.save(initiative);
+        AIInitiative saved = adapter.create(initiative);
         flushAndClear();
-        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow();
+        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow().initiative();
 
         assertInitiativeState(saved, initiative);
         assertInitiativeState(loaded, initiative);
@@ -147,9 +150,9 @@ class PostgreSQLAIInitiativePersistenceIntegrationTest {
     void should_round_trip_a_risk_assessed_initiative_with_string_enums() {
         AIInitiative initiative = createRiskAssessedInitiative();
 
-        AIInitiative saved = adapter.save(initiative);
+        AIInitiative saved = adapter.create(initiative);
         flushAndClear();
-        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow();
+        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow().initiative();
 
         assertInitiativeState(saved, initiative);
         assertInitiativeState(loaded, initiative);
@@ -172,17 +175,18 @@ class PostgreSQLAIInitiativePersistenceIntegrationTest {
 
     @Test
     void should_update_the_existing_row_through_valid_domain_behavior() {
-        AIInitiative draft = adapter.save(createInitiative());
+        AIInitiative draft = adapter.create(createInitiative());
         flushAndClear();
 
-        AIInitiative loadedDraft = adapter.findById(draft.id()).orElseThrow();
+        LoadedAIInitiative loaded = adapter.findById(draft.id()).orElseThrow();
+        AIInitiative loadedDraft = loaded.initiative();
         loadedDraft.submit(SUBMITTED_AT);
         loadedDraft.startAssessment();
         loadedDraft.assessRisk(RiskLevel.HIGH, ASSESSED_AT);
 
-        AIInitiative saved = adapter.save(loadedDraft);
+        AIInitiative saved = adapter.save(loaded);
         flushAndClear();
-        AIInitiative reloaded = adapter.findById(draft.id()).orElseThrow();
+        AIInitiative reloaded = adapter.findById(draft.id()).orElseThrow().initiative();
 
         assertEquals(InitiativeStatus.RISK_ASSESSED, saved.status());
         assertEquals(RiskLevel.HIGH, saved.preliminaryRisk());
