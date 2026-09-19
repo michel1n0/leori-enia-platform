@@ -3,11 +3,14 @@ package com.leori.enia.initiative.infrastructure.persistence;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
 import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.AIInitiativeId;
-import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 
-@Repository
+/**
+ * Registered explicitly by AIInitiativePersistenceConfiguration.
+ * Persistence exception translation belongs to the Spring Data repository proxy;
+ * this adapter only maps values and delegates repository calls.
+ */
 public final class JpaAIInitiativeRepositoryAdapter
         implements AIInitiativeRepository {
 

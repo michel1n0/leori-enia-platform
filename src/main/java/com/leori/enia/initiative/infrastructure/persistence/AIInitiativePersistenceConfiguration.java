@@ -1,0 +1,13 @@
+package com.leori.enia.initiative.infrastructure.persistence;
+
+import org.springframework.boot.autoconfigure.domain.EntityScan;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+
+@Configuration(proxyBeanMethods = false)
+@EntityScan(basePackageClasses = AIInitiativeJpaEntity.class)
+@EnableJpaRepositories(basePackageClasses = SpringDataAIInitiativeRepository.class)
+@Import({AIInitiativePersistenceMapper.class, JpaAIInitiativeRepositoryAdapter.class})
+public class AIInitiativePersistenceConfiguration {
+}

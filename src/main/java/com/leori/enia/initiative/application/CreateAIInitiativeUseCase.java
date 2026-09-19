@@ -7,7 +7,7 @@ import com.leori.enia.initiative.domain.AIInitiativeId;
 import java.time.Clock;
 import java.util.Objects;
 
-public final class CreateAIInitiativeUseCase {
+public class CreateAIInitiativeUseCase {
 
     private final AIInitiativeRepository repository;
     private final Clock clock;

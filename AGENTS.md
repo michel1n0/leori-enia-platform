@@ -638,28 +638,25 @@ At completion, report:
 
 ## 23. Current Next Increment
 
-Unless explicitly changed by the project owner, the next planned
-increment is PostgreSQL Testcontainers persistence integration:
+The current increment is AI Initiative Application Transaction Boundary:
 
-- verification against a real PostgreSQL Testcontainer
-- committed `V1__create_ai_initiatives.sql` executed unchanged
-- Hibernate schema validation rather than schema generation
-- native UUID and fractional `Instant` verification
-- repository create and existing-row update round trips
-- H2 retained as the fast persistence adapter test database
+- one transaction per state-changing use-case execution
+- Domain and Application remain framework-independent
+- transaction mechanism belongs to infrastructure/configuration
+- explicit production composition of transactional use cases
+- PostgreSQL integration verification of commit and rollback
+- existing Domain, Application, H2, and PostgreSQL tests retained
 
 Constraints for this increment:
 
-- no transaction-boundary changes
-- no optimistic locking
-- no event publication or persistence
-- no application wiring
+- no optimistic locking yet
+- no domain-event publication or persistence
 - no REST
-- no Domain or Application changes unless PostgreSQL demonstrates a
-  genuine incompatibility
+- no changes to the V1 migration or database schema
 
 After implementation:
 
     mvn clean test
+    git diff --check
 
 Do not commit automatically.

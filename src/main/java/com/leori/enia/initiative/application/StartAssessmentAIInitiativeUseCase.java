@@ -6,7 +6,7 @@ import com.leori.enia.initiative.domain.AIInitiative;
 
 import java.util.Objects;
 
-public final class StartAssessmentAIInitiativeUseCase {
+public class StartAssessmentAIInitiativeUseCase {
 
     private final AIInitiativeRepository repository;
 
