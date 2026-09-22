@@ -153,7 +153,8 @@ class PostgreSQLAIInitiativeOptimisticLockingIntegrationTest {
 
         submit.execute(new SubmitAIInitiativeCommand(initial.id(), new ExpectedRevision(initial.id(), 0)));
         assertEquals(1L, load(initial.id()).version());
-        startAssessment.execute(new StartAssessmentAIInitiativeCommand(initial.id()));
+        startAssessment.execute(new StartAssessmentAIInitiativeCommand(
+                initial.id(), new ExpectedRevision(initial.id(), 1)));
         assertEquals(2L, load(initial.id()).version());
         assessRisk.execute(new AssessRiskAIInitiativeCommand(initial.id(), RiskLevel.HIGH));
         assertEquals(3L, load(initial.id()).version());
