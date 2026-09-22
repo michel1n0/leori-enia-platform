@@ -3,6 +3,7 @@ package com.leori.enia.initiative.infrastructure.configuration;
 import com.leori.enia.initiative.application.ApproveAIInitiativeUseCase;
 import com.leori.enia.initiative.application.AssessRiskAIInitiativeUseCase;
 import com.leori.enia.initiative.application.CreateAIInitiativeUseCase;
+import com.leori.enia.initiative.application.GetAIInitiativeUseCase;
 import com.leori.enia.initiative.application.RejectAIInitiativeUseCase;
 import com.leori.enia.initiative.application.StartAssessmentAIInitiativeUseCase;
 import com.leori.enia.initiative.application.SubmitAIInitiativeUseCase;
@@ -49,6 +50,11 @@ public class AIInitiativeApplicationConfiguration {
     @Bean
     Clock aiInitiativeClock() {
         return Clock.systemUTC();
+    }
+
+    @Bean
+    GetAIInitiativeUseCase getAIInitiativeUseCase(AIInitiativeRepository repository) {
+        return new GetAIInitiativeUseCase(repository);
     }
 
     @Bean
