@@ -7,12 +7,15 @@ import com.leori.enia.initiative.application.GetAIInitiativeUseCase;
 import com.leori.enia.initiative.application.RejectAIInitiativeUseCase;
 import com.leori.enia.initiative.application.StartAssessmentAIInitiativeUseCase;
 import com.leori.enia.initiative.application.SubmitAIInitiativeUseCase;
+import com.leori.enia.initiative.application.exception.AIInitiativeRevisionMismatchException;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
 import com.leori.enia.initiative.infrastructure.persistence.AIInitiativePersistenceConfiguration;
+import org.aopalliance.intercept.MethodInterceptor;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.interceptor.NameMatchTransactionAttributeSource;
@@ -127,6 +130,13 @@ public class AIInitiativeApplicationConfiguration {
         // Class proxies preserve the existing concrete use-case contracts.
         ProxyFactory factory = new ProxyFactory(target);
         factory.setProxyTargetClass(true);
+        factory.addAdvice((MethodInterceptor) invocation -> {
+            try {
+                return invocation.proceed();
+            } catch (OptimisticLockingFailureException exception) {
+                throw new AIInitiativeRevisionMismatchException(exception);
+            }
+        });
         factory.addAdvice(transactions);
         return useCaseType.cast(factory.getProxy());
     }

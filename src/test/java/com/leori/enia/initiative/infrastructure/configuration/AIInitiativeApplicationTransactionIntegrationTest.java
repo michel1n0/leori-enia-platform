@@ -11,9 +11,11 @@ import com.leori.enia.initiative.application.RejectAIInitiativeUseCase;
 import com.leori.enia.initiative.application.StartAssessmentAIInitiativeCommand;
 import com.leori.enia.initiative.application.StartAssessmentAIInitiativeUseCase;
 import com.leori.enia.initiative.application.SubmitAIInitiativeCommand;
+import com.leori.enia.initiative.application.ExpectedRevision;
 import com.leori.enia.initiative.application.SubmitAIInitiativeUseCase;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
 import com.leori.enia.initiative.application.port.LoadedAIInitiative;
+import com.leori.enia.initiative.application.port.SavedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.AIInitiativeId;
 import com.leori.enia.initiative.domain.InitiativeStatus;
@@ -220,7 +222,10 @@ class AIInitiativeApplicationTransactionIntegrationTest {
         return switch (operation) {
             case CREATE -> create.execute(new CreateAIInitiativeCommand(
                     OrganizationId.generate(), "AI initiative", "Transaction verification", true, false));
-            case SUBMIT -> submit.execute(new SubmitAIInitiativeCommand(before.id()));
+            case SUBMIT -> {
+                submit.execute(new SubmitAIInitiativeCommand(before.id(), new ExpectedRevision(before.id(), 0)));
+                yield repository.delegate.findById(before.id()).orElseThrow().initiative();
+            }
             case START_ASSESSMENT -> startAssessment.execute(new StartAssessmentAIInitiativeCommand(before.id()));
             case ASSESS_RISK -> assessRisk.execute(new AssessRiskAIInitiativeCommand(before.id(), RiskLevel.HIGH));
             case APPROVE -> approve.execute(new ApproveAIInitiativeCommand(before.id()));
@@ -304,8 +309,19 @@ class AIInitiativeApplicationTransactionIntegrationTest {
         }
 
         @Override
-        public AIInitiative save(LoadedAIInitiative loaded) {
-            return observeWrite(loaded.initiative(), () -> delegate.save(loaded));
+        public SavedAIInitiative save(LoadedAIInitiative loaded) {
+            saveTransaction = currentTransaction();
+            saves++;
+            SavedAIInitiative result = delegate.save(loaded);
+            entityManager.flush();
+            savedId = result.initiative().id();
+            flushedStatus = jdbc.queryForObject(
+                    "select status from ai_initiatives where id = ?", String.class, savedId.value());
+            assertEquals(loaded.initiative().status().name(), flushedStatus);
+            if (failAfterFlush) {
+                throw new FailureAfterFlush();
+            }
+            return result;
         }
 
         private AIInitiative observeWrite(AIInitiative initiative, Supplier<AIInitiative> write) {

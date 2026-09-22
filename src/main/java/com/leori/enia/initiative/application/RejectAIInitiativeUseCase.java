@@ -38,6 +38,6 @@ public class RejectAIInitiativeUseCase {
 
         initiative.reject(command.reason(), clock.instant());
 
-        return repository.save(loaded);
+        return repository.save(loaded).initiative();
     }
 }

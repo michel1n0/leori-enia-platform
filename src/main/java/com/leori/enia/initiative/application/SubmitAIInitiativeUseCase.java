@@ -1,8 +1,11 @@
 package com.leori.enia.initiative.application;
 
+import com.leori.enia.initiative.application.exception.AIInitiativeInvalidTransitionException;
 import com.leori.enia.initiative.application.exception.AIInitiativeNotFoundException;
+import com.leori.enia.initiative.application.exception.AIInitiativeRevisionMismatchException;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
 import com.leori.enia.initiative.application.port.LoadedAIInitiative;
+import com.leori.enia.initiative.application.port.SavedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 
 import java.time.Clock;
@@ -24,17 +27,28 @@ public class SubmitAIInitiativeUseCase {
         this.clock = Objects.requireNonNull(clock, "Clock is required");
     }
 
-    public AIInitiative execute(SubmitAIInitiativeCommand command) {
+    public VersionedAIInitiativeDetails execute(SubmitAIInitiativeCommand command) {
         Objects.requireNonNull(command, "Submit AI initiative command is required");
+        Objects.requireNonNull(command.expectedRevision(), "Expected revision is required");
 
         LoadedAIInitiative loaded = repository.findById(command.initiativeId())
                 .orElseThrow(() -> new AIInitiativeNotFoundException(
                         command.initiativeId()
                 ));
         AIInitiative initiative = loaded.initiative();
+        if (!loaded.initiative().id().equals(command.expectedRevision().initiativeId())
+                || loaded.version() != command.expectedRevision().value()) {
+            throw new AIInitiativeRevisionMismatchException();
+        }
 
-        initiative.submit(clock.instant());
+        try {
+            initiative.submit(clock.instant());
+        } catch (IllegalStateException exception) {
+            throw new AIInitiativeInvalidTransitionException(exception);
+        }
 
-        return repository.save(loaded);
+        SavedAIInitiative saved = repository.save(loaded);
+        return new VersionedAIInitiativeDetails(
+                AIInitiativeDetails.from(saved.initiative()), saved.version());
     }
 }

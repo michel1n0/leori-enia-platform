@@ -38,6 +38,6 @@ public class ApproveAIInitiativeUseCase {
 
         initiative.approve(clock.instant());
 
-        return repository.save(loaded);
+        return repository.save(loaded).initiative();
     }
 }

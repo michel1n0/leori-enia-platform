@@ -10,8 +10,12 @@ import com.leori.enia.initiative.application.StartAssessmentAIInitiativeCommand;
 import com.leori.enia.initiative.application.StartAssessmentAIInitiativeUseCase;
 import com.leori.enia.initiative.application.SubmitAIInitiativeCommand;
 import com.leori.enia.initiative.application.SubmitAIInitiativeUseCase;
+import com.leori.enia.initiative.application.ExpectedRevision;
+import com.leori.enia.initiative.application.exception.AIInitiativeRevisionMismatchException;
+import jakarta.persistence.EntityManager;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
 import com.leori.enia.initiative.application.port.LoadedAIInitiative;
+import com.leori.enia.initiative.application.port.SavedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.AIInitiativeId;
 import com.leori.enia.initiative.domain.InitiativeStatus;
@@ -147,7 +151,7 @@ class PostgreSQLAIInitiativeOptimisticLockingIntegrationTest {
         AIInitiative initial = createDraftInitiative();
         transactions.execute(status -> adapter.create(initial));
 
-        submit.execute(new SubmitAIInitiativeCommand(initial.id()));
+        submit.execute(new SubmitAIInitiativeCommand(initial.id(), new ExpectedRevision(initial.id(), 0)));
         assertEquals(1L, load(initial.id()).version());
         startAssessment.execute(new StartAssessmentAIInitiativeCommand(initial.id()));
         assertEquals(2L, load(initial.id()).version());
@@ -156,6 +160,89 @@ class PostgreSQLAIInitiativeOptimisticLockingIntegrationTest {
         approve.execute(new ApproveAIInitiativeCommand(initial.id()));
 
         assertWinner(initial.id(), 4L);
+    }
+
+    @Test
+    void saved_result_uses_the_actual_postgresql_hibernate_version() {
+        AIInitiative initial = createDraftInitiative();
+        transactions.execute(status -> adapter.create(initial));
+        assertEquals(0L, load(initial.id()).version());
+
+        LoadedAIInitiative first = load(initial.id());
+        first.initiative().submit(NOW);
+        SavedAIInitiative afterSubmit = transactions.execute(status -> adapter.save(first));
+        assertEquals(1L, afterSubmit.version());
+        assertEquals(1L, load(initial.id()).version());
+
+        LoadedAIInitiative second = load(initial.id());
+        second.initiative().startAssessment();
+        SavedAIInitiative afterAssessment = transactions.execute(status -> adapter.save(second));
+        assertEquals(2L, afterAssessment.version());
+        assertEquals(2L, load(initial.id()).version());
+    }
+
+    @Test
+    void stale_client_revision_is_rejected_before_domain_mutation() {
+        AIInitiative initial = createDraftInitiative();
+        transactions.execute(status -> adapter.create(initial));
+        submit.execute(new SubmitAIInitiativeCommand(initial.id(), new ExpectedRevision(initial.id(), 0)));
+
+        assertThrows(AIInitiativeRevisionMismatchException.class,
+                () -> submit.execute(new SubmitAIInitiativeCommand(initial.id(), new ExpectedRevision(initial.id(), 0))));
+        assertEquals(InitiativeStatus.SUBMITTED, load(initial.id()).initiative().status());
+        assertEquals(1L, load(initial.id()).version());
+    }
+
+    @Test
+    void two_valid_submit_preconditions_still_have_one_optimistic_winner() throws Exception {
+        AIInitiative initial = createDraftInitiative();
+        transactions.execute(status -> adapter.create(initial));
+        pausingRepository.pauseNextLoad.set(true);
+
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var loser = executor.submit(() -> submit.execute(
+                    new SubmitAIInitiativeCommand(initial.id(), new ExpectedRevision(initial.id(), 0))));
+            try {
+                assertTrue(pausingRepository.loaded.await(15, TimeUnit.SECONDS));
+                assertEquals(InitiativeStatus.SUBMITTED, submit.execute(
+                        new SubmitAIInitiativeCommand(initial.id(), new ExpectedRevision(initial.id(), 0)))
+                        .details().status());
+            } finally {
+                pausingRepository.resume.countDown();
+            }
+            ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> loser.get(15, TimeUnit.SECONDS));
+            AIInitiativeRevisionMismatchException translated = assertInstanceOf(
+                    AIInitiativeRevisionMismatchException.class, failure.getCause());
+            assertInstanceOf(ObjectOptimisticLockingFailureException.class, translated.getCause());
+            assertEquals(InitiativeStatus.SUBMITTED, load(initial.id()).initiative().status());
+            assertEquals(1L, load(initial.id()).version());
+        }
+    }
+
+    @Test
+    void commit_time_conflict_is_translated_outside_the_transaction_interceptor() throws Exception {
+        AIInitiative initial = createRiskAssessedInitiative();
+        transactions.execute(status -> adapter.create(initial));
+        pausingRepository.pauseNextDeferredSave.set(true);
+
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var loser = executor.submit(() -> reject.execute(
+                    new RejectAIInitiativeCommand(initial.id(), "Residual risk unacceptable")));
+            try {
+                assertTrue(pausingRepository.deferredSaveReached.await(15, TimeUnit.SECONDS));
+                assertEquals(InitiativeStatus.APPROVED,
+                        approve.execute(new ApproveAIInitiativeCommand(initial.id())).status());
+            } finally {
+                pausingRepository.resumeDeferredSave.countDown();
+            }
+            ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> loser.get(15, TimeUnit.SECONDS));
+            AIInitiativeRevisionMismatchException translated = assertInstanceOf(
+                    AIInitiativeRevisionMismatchException.class, failure.getCause());
+            assertInstanceOf(ObjectOptimisticLockingFailureException.class, translated.getCause());
+            assertWinner(initial.id(), 1L);
+        }
     }
 
     @Test
@@ -179,9 +266,9 @@ class PostgreSQLAIInitiativeOptimisticLockingIntegrationTest {
 
             ExecutionException failure = assertThrows(ExecutionException.class,
                     () -> staleExecution.get(15, TimeUnit.SECONDS));
-            ObjectOptimisticLockingFailureException conflict = assertInstanceOf(
-                    ObjectOptimisticLockingFailureException.class, failure.getCause());
-            System.out.println("Use-case stale-write exception: " + conflict.getClass().getName());
+            AIInitiativeRevisionMismatchException conflict = assertInstanceOf(
+                    AIInitiativeRevisionMismatchException.class, failure.getCause());
+            assertInstanceOf(ObjectOptimisticLockingFailureException.class, conflict.getCause());
             assertWinner(initial.id(), 1L);
         }
         assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
@@ -292,20 +379,30 @@ class PostgreSQLAIInitiativeOptimisticLockingIntegrationTest {
 
         @Bean
         @Primary
-        PausingRepository pausingRepository(JpaAIInitiativeRepositoryAdapter adapter) {
-            return new PausingRepository(adapter);
+        PausingRepository pausingRepository(JpaAIInitiativeRepositoryAdapter adapter,
+                                             EntityManager entityManager,
+                                             AIInitiativePersistenceMapper mapper) {
+            return new PausingRepository(adapter, entityManager, mapper);
         }
     }
 
     /** Coordinates the race without changing production transactions or Domain. */
     static class PausingRepository implements AIInitiativeRepository {
         private final AIInitiativeRepository delegate;
+        private final EntityManager entityManager;
+        private final AIInitiativePersistenceMapper mapper;
         private final AtomicBoolean pauseNextLoad = new AtomicBoolean();
+        private final AtomicBoolean pauseNextDeferredSave = new AtomicBoolean();
         private CountDownLatch loaded;
         private CountDownLatch resume;
+        private CountDownLatch deferredSaveReached;
+        private CountDownLatch resumeDeferredSave;
 
-        PausingRepository(AIInitiativeRepository delegate) {
+        PausingRepository(AIInitiativeRepository delegate, EntityManager entityManager,
+                          AIInitiativePersistenceMapper mapper) {
             this.delegate = delegate;
+            this.entityManager = entityManager;
+            this.mapper = mapper;
         }
 
         @Override
@@ -314,7 +411,19 @@ class PostgreSQLAIInitiativeOptimisticLockingIntegrationTest {
         }
 
         @Override
-        public AIInitiative save(LoadedAIInitiative loaded) {
+        public SavedAIInitiative save(LoadedAIInitiative loaded) {
+            if (pauseNextDeferredSave.compareAndSet(true, false)) {
+                // Deliberately leave Hibernate's UPDATE pending until transaction commit.
+                entityManager.merge(mapper.toEntity(loaded.initiative(), loaded.version()));
+                deferredSaveReached.countDown();
+                try {
+                    assertTrue(resumeDeferredSave.await(15, TimeUnit.SECONDS));
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(exception);
+                }
+                return new SavedAIInitiative(loaded.initiative(), loaded.version());
+            }
             return delegate.save(loaded);
         }
 
@@ -337,8 +446,11 @@ class PostgreSQLAIInitiativeOptimisticLockingIntegrationTest {
 
         void reset() {
             pauseNextLoad.set(false);
+            pauseNextDeferredSave.set(false);
             loaded = new CountDownLatch(1);
             resume = new CountDownLatch(1);
+            deferredSaveReached = new CountDownLatch(1);
+            resumeDeferredSave = new CountDownLatch(1);
         }
     }
 }

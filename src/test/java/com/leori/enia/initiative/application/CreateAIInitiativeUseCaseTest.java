@@ -2,6 +2,7 @@ package com.leori.enia.initiative.application;
 
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
 import com.leori.enia.initiative.application.port.LoadedAIInitiative;
+import com.leori.enia.initiative.application.port.SavedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.AIInitiativeId;
 import com.leori.enia.initiative.domain.InitiativeStatus;
@@ -67,7 +68,7 @@ class CreateAIInitiativeUseCaseTest {
         }
 
         @Override
-        public AIInitiative save(LoadedAIInitiative loaded) {
+        public SavedAIInitiative save(LoadedAIInitiative loaded) {
             throw new AssertionError("Creation must not update an existing initiative");
         }
 

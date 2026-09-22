@@ -184,7 +184,7 @@ class PostgreSQLAIInitiativePersistenceIntegrationTest {
         loadedDraft.startAssessment();
         loadedDraft.assessRisk(RiskLevel.HIGH, ASSESSED_AT);
 
-        AIInitiative saved = adapter.save(loaded);
+        AIInitiative saved = adapter.save(loaded).initiative();
         flushAndClear();
         AIInitiative reloaded = adapter.findById(draft.id()).orElseThrow().initiative();
 

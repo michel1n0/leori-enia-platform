@@ -1,8 +1,11 @@
 package com.leori.enia.initiative.application;
 
 import com.leori.enia.initiative.application.exception.AIInitiativeNotFoundException;
+import com.leori.enia.initiative.application.exception.AIInitiativeRevisionMismatchException;
+import com.leori.enia.initiative.application.exception.AIInitiativeInvalidTransitionException;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
 import com.leori.enia.initiative.application.port.LoadedAIInitiative;
+import com.leori.enia.initiative.application.port.SavedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.AIInitiativeId;
 import com.leori.enia.initiative.domain.InitiativeStatus;
@@ -38,11 +41,14 @@ class SubmitAIInitiativeUseCaseTest {
         SubmitAIInitiativeUseCase useCase =
                 new SubmitAIInitiativeUseCase(repository, CLOCK);
 
-        AIInitiative submitted = useCase.execute(
-                new SubmitAIInitiativeCommand(initiative.id())
+        VersionedAIInitiativeDetails result = useCase.execute(
+                new SubmitAIInitiativeCommand(initiative.id(), new ExpectedRevision(initiative.id(), 7))
         );
+        AIInitiative submitted = repository.findById(initiative.id()).orElseThrow().initiative();
 
         assertSame(initiative, submitted);
+        assertEquals(8, result.revision());
+        assertEquals(InitiativeStatus.SUBMITTED, result.details().status());
         assertEquals(InitiativeStatus.SUBMITTED, submitted.status());
         assertEquals(1, repository.saveCount());
         assertSame(submitted, repository.findById(initiative.id()).orElseThrow().initiative());
@@ -66,10 +72,50 @@ class SubmitAIInitiativeUseCaseTest {
 
         AIInitiativeNotFoundException exception = assertThrows(
                 AIInitiativeNotFoundException.class,
-                () -> useCase.execute(new SubmitAIInitiativeCommand(missingId))
+                () -> useCase.execute(new SubmitAIInitiativeCommand(missingId, new ExpectedRevision(missingId, 0)))
         );
 
         assertEquals("AI initiative not found: " + missingId, exception.getMessage());
+        assertEquals(0, repository.saveCount());
+    }
+
+    @Test
+    void stale_revision_does_not_mutate_or_save() {
+        AIInitiative initiative = createInitiative();
+        InMemoryAIInitiativeRepository repository = new InMemoryAIInitiativeRepository(initiative);
+        SubmitAIInitiativeUseCase useCase = new SubmitAIInitiativeUseCase(repository, CLOCK);
+
+        assertThrows(AIInitiativeRevisionMismatchException.class,
+                () -> useCase.execute(new SubmitAIInitiativeCommand(initiative.id(), new ExpectedRevision(initiative.id(), 6))));
+
+        assertEquals(InitiativeStatus.DRAFT, initiative.status());
+        assertEquals(0, initiative.domainEvents().size());
+        assertEquals(0, repository.saveCount());
+    }
+
+    @Test
+    void revision_for_another_initiative_does_not_authorize_mutation() {
+        AIInitiative initiative = createInitiative();
+        InMemoryAIInitiativeRepository repository = new InMemoryAIInitiativeRepository(initiative);
+        SubmitAIInitiativeUseCase useCase = new SubmitAIInitiativeUseCase(repository, CLOCK);
+
+        assertThrows(AIInitiativeRevisionMismatchException.class,
+                () -> useCase.execute(new SubmitAIInitiativeCommand(initiative.id(),
+                        new ExpectedRevision(AIInitiativeId.generate(), 7))));
+        assertEquals(InitiativeStatus.DRAFT, initiative.status());
+        assertEquals(0, initiative.domainEvents().size());
+        assertEquals(0, repository.saveCount());
+    }
+
+    @Test
+    void current_revision_still_obeys_lifecycle_rules() {
+        AIInitiative initiative = createInitiative();
+        initiative.submit(SUBMITTED_AT);
+        InMemoryAIInitiativeRepository repository = new InMemoryAIInitiativeRepository(initiative);
+        SubmitAIInitiativeUseCase useCase = new SubmitAIInitiativeUseCase(repository, CLOCK);
+
+        assertThrows(AIInitiativeInvalidTransitionException.class,
+                () -> useCase.execute(new SubmitAIInitiativeCommand(initiative.id(), new ExpectedRevision(initiative.id(), 7))));
         assertEquals(0, repository.saveCount());
     }
 
@@ -104,12 +150,12 @@ class SubmitAIInitiativeUseCaseTest {
         }
 
         @Override
-        public AIInitiative save(LoadedAIInitiative loaded) {
+        public SavedAIInitiative save(LoadedAIInitiative loaded) {
             assertEquals(7L, loaded.version(), "Must preserve the loaded revision");
             AIInitiative initiative = loaded.initiative();
             initiatives.put(initiative.id(), initiative);
             saveCount++;
-            return initiative;
+            return new SavedAIInitiative(initiative, loaded.version() + 1);
         }
 
         @Override

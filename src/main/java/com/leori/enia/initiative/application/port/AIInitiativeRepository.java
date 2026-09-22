@@ -16,7 +16,7 @@ public interface AIInitiativeRepository {
      * Reload explicitly before a subsequent edit; this does not advance the
      * supplied revision. Implementations may report conflicts at commit time.
      */
-    AIInitiative save(LoadedAIInitiative loaded);
+    SavedAIInitiative save(LoadedAIInitiative loaded);
 
     Optional<LoadedAIInitiative> findById(AIInitiativeId id);
 }

@@ -1,6 +1,8 @@
 package com.leori.enia.initiative.infrastructure.web;
 
+import com.leori.enia.initiative.application.exception.AIInitiativeInvalidTransitionException;
 import com.leori.enia.initiative.application.exception.AIInitiativeNotFoundException;
+import com.leori.enia.initiative.application.exception.AIInitiativeRevisionMismatchException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -15,6 +17,30 @@ import java.util.TreeMap;
 
 @RestControllerAdvice(assignableTypes = AIInitiativeController.class)
 public class AIInitiativeErrorHandler {
+
+    @ExceptionHandler(AIInitiativeETagCodec.MissingIfMatchException.class)
+    ResponseEntity<ErrorResponse> missingIfMatch() {
+        return ResponseEntity.status(HttpStatus.PRECONDITION_REQUIRED)
+                .body(new ErrorResponse("IF_MATCH_REQUIRED", "If-Match is required"));
+    }
+
+    @ExceptionHandler(AIInitiativeETagCodec.InvalidIfMatchException.class)
+    ResponseEntity<ErrorResponse> invalidIfMatch() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse("INVALID_IF_MATCH", "If-Match must be a strong initiative ETag"));
+    }
+
+    @ExceptionHandler(AIInitiativeRevisionMismatchException.class)
+    ResponseEntity<ErrorResponse> revisionMismatch() {
+        return ResponseEntity.status(HttpStatus.PRECONDITION_FAILED)
+                .body(new ErrorResponse("AI_INITIATIVE_REVISION_MISMATCH", "AI initiative has changed"));
+    }
+
+    @ExceptionHandler(AIInitiativeInvalidTransitionException.class)
+    ResponseEntity<ErrorResponse> invalidTransition() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse("INVALID_INITIATIVE_TRANSITION", "AI initiative cannot make this transition"));
+    }
 
     @ExceptionHandler(AIInitiativeNotFoundException.class)
     ResponseEntity<ErrorResponse> notFound() {

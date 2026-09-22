@@ -3,6 +3,7 @@ package com.leori.enia.initiative.application;
 import com.leori.enia.initiative.application.exception.AIInitiativeNotFoundException;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
 import com.leori.enia.initiative.application.port.LoadedAIInitiative;
+import com.leori.enia.initiative.application.port.SavedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.AIInitiativeId;
 import com.leori.enia.initiative.domain.InitiativeStatus;
@@ -38,7 +39,9 @@ class GetAIInitiativeUseCaseTest {
         GetAIInitiativeUseCase useCase = new GetAIInitiativeUseCase(
                 repository(Optional.of(new LoadedAIInitiative(initiative, 42))));
 
-        AIInitiativeDetails details = useCase.execute(initiative.id());
+        VersionedAIInitiativeDetails result = useCase.execute(initiative.id());
+        AIInitiativeDetails details = result.details();
+        assertEquals(42, result.revision());
 
         assertEquals(initiative.id(), details.id());
         assertEquals(initiative.organizationId(), details.organizationId());
@@ -77,7 +80,7 @@ class GetAIInitiativeUseCaseTest {
             }
 
             @Override
-            public AIInitiative save(LoadedAIInitiative initiative) {
+            public SavedAIInitiative save(LoadedAIInitiative initiative) {
                 throw new AssertionError("Read must not save");
             }
 

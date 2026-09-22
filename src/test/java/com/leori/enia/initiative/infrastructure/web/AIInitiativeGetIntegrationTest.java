@@ -74,7 +74,7 @@ class AIInitiativeGetIntegrationTest {
                 .andExpect(jsonPath("$.domainEvents").doesNotExist())
                 .andExpect(jsonPath("$.version").doesNotExist())
                 .andExpect(jsonPath("$.initiative").doesNotExist())
-                .andExpect(header().doesNotExist("ETag"));
+                .andExpect(header().string("ETag", "\"ai-initiative:" + initiative.id().value() + ":0\""));
     }
 
     @Test

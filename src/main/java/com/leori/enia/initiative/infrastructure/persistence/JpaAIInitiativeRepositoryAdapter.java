@@ -2,6 +2,7 @@ package com.leori.enia.initiative.infrastructure.persistence;
 
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
 import com.leori.enia.initiative.application.port.LoadedAIInitiative;
+import com.leori.enia.initiative.application.port.SavedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.AIInitiativeId;
 
@@ -35,11 +36,12 @@ public final class JpaAIInitiativeRepositoryAdapter
     }
 
     @Override
-    public AIInitiative save(LoadedAIInitiative loaded) {
+    public SavedAIInitiative save(LoadedAIInitiative loaded) {
         // Never replace the caller's expected version with a freshly read one.
         AIInitiativeJpaEntity entity = mapper.toEntity(loaded.initiative(), loaded.version());
-        AIInitiativeJpaEntity savedEntity = repository.save(entity);
-        return mapper.toDomain(savedEntity);
+        // Flush so Hibernate assigns the actual next @Version before it crosses the port.
+        AIInitiativeJpaEntity savedEntity = repository.saveAndFlush(entity);
+        return new SavedAIInitiative(mapper.toDomain(savedEntity), savedEntity.version());
     }
 
     @Override

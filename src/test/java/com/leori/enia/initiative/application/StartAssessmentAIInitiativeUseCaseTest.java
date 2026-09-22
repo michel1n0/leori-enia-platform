@@ -3,6 +3,7 @@ package com.leori.enia.initiative.application;
 import com.leori.enia.initiative.application.exception.AIInitiativeNotFoundException;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
 import com.leori.enia.initiative.application.port.LoadedAIInitiative;
+import com.leori.enia.initiative.application.port.SavedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.AIInitiativeId;
 import com.leori.enia.initiative.domain.InitiativeStatus;
@@ -138,13 +139,13 @@ class StartAssessmentAIInitiativeUseCaseTest {
         }
 
         @Override
-        public AIInitiative save(LoadedAIInitiative loaded) {
+        public SavedAIInitiative save(LoadedAIInitiative loaded) {
             assertEquals(7L, loaded.version(), "Must preserve the loaded revision");
             AIInitiative initiative = loaded.initiative();
             initiatives.put(initiative.id(), initiative);
             savedInitiative = initiative;
             saveCount++;
-            return initiative;
+            return new SavedAIInitiative(initiative, loaded.version() + 1);
         }
 
         @Override

@@ -34,6 +34,6 @@ public class StartAssessmentAIInitiativeUseCase {
 
         initiative.startAssessment();
 
-        return repository.save(loaded);
+        return repository.save(loaded).initiative();
     }
 }

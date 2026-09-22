@@ -38,6 +38,6 @@ public class AssessRiskAIInitiativeUseCase {
 
         initiative.assessRisk(command.riskLevel(), clock.instant());
 
-        return repository.save(loaded);
+        return repository.save(loaded).initiative();
     }
 }
