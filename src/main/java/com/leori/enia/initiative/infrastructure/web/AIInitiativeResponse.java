@@ -1,6 +1,7 @@
 package com.leori.enia.initiative.infrastructure.web;
 
 import com.leori.enia.initiative.application.AIInitiativeDetails;
+import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.InitiativeStatus;
 import com.leori.enia.initiative.domain.RiskLevel;
 
@@ -18,6 +19,20 @@ public record AIInitiativeResponse(
         boolean impactsRights,
         Instant createdAt
 ) {
+    static AIInitiativeResponse from(AIInitiative initiative) {
+        return new AIInitiativeResponse(
+                initiative.id().value(),
+                initiative.organizationId().value(),
+                initiative.name(),
+                initiative.description(),
+                initiative.status(),
+                initiative.preliminaryRisk(),
+                initiative.usesPersonalData(),
+                initiative.impactsRights(),
+                initiative.createdAt()
+        );
+    }
+
     static AIInitiativeResponse from(AIInitiativeDetails details) {
         return new AIInitiativeResponse(
                 details.id().value(),

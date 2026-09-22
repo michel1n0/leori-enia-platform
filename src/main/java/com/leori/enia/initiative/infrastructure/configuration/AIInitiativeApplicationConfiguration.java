@@ -21,6 +21,7 @@ import org.springframework.transaction.interceptor.RuleBasedTransactionAttribute
 import org.springframework.transaction.interceptor.TransactionInterceptor;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -49,7 +50,7 @@ public class AIInitiativeApplicationConfiguration {
 
     @Bean
     Clock aiInitiativeClock() {
-        return Clock.systemUTC();
+        return Clock.tick(Clock.systemUTC(), Duration.ofNanos(1_000));
     }
 
     @Bean
