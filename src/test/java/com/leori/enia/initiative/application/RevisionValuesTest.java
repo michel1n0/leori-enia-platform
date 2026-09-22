@@ -4,9 +4,29 @@ import com.leori.enia.initiative.domain.AIInitiativeId;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RevisionValuesTest {
+
+    @Test
+    void expected_revision_matches_the_same_id_and_revision() {
+        AIInitiativeId id = AIInitiativeId.generate();
+        assertTrue(new ExpectedRevision(id, 7).matches(id, 7));
+    }
+
+    @Test
+    void expected_revision_does_not_match_another_id() {
+        ExpectedRevision expected = new ExpectedRevision(AIInitiativeId.generate(), 7);
+        assertFalse(expected.matches(AIInitiativeId.generate(), 7));
+    }
+
+    @Test
+    void expected_revision_does_not_match_another_revision() {
+        AIInitiativeId id = AIInitiativeId.generate();
+        assertFalse(new ExpectedRevision(id, 7).matches(id, 8));
+    }
 
     @Test
     void expected_revision_accepts_zero_and_positive_values() {

@@ -231,7 +231,11 @@ class AIInitiativeApplicationTransactionIntegrationTest {
                         before.id(), new ExpectedRevision(before.id(), 0)));
                 yield repository.delegate.findById(before.id()).orElseThrow().initiative();
             }
-            case ASSESS_RISK -> assessRisk.execute(new AssessRiskAIInitiativeCommand(before.id(), RiskLevel.HIGH));
+            case ASSESS_RISK -> {
+                assessRisk.execute(new AssessRiskAIInitiativeCommand(
+                        before.id(), RiskLevel.HIGH, new ExpectedRevision(before.id(), 0)));
+                yield repository.delegate.findById(before.id()).orElseThrow().initiative();
+            }
             case APPROVE -> approve.execute(new ApproveAIInitiativeCommand(before.id()));
             case REJECT -> reject.execute(new RejectAIInitiativeCommand(before.id(), "Residual risk unacceptable"));
         };

@@ -36,8 +36,7 @@ public class SubmitAIInitiativeUseCase {
                         command.initiativeId()
                 ));
         AIInitiative initiative = loaded.initiative();
-        if (!loaded.initiative().id().equals(command.expectedRevision().initiativeId())
-                || loaded.version() != command.expectedRevision().value()) {
+        if (!command.expectedRevision().matches(loaded.initiative().id(), loaded.version())) {
             throw new AIInitiativeRevisionMismatchException();
         }
 

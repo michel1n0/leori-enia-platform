@@ -5,6 +5,7 @@ import com.leori.enia.initiative.domain.RiskLevel;
 
 public record AssessRiskAIInitiativeCommand(
         AIInitiativeId initiativeId,
-        RiskLevel riskLevel
+        RiskLevel riskLevel,
+        ExpectedRevision expectedRevision
 ) {
 }

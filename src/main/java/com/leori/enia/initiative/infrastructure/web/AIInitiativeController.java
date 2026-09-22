@@ -1,5 +1,7 @@
 package com.leori.enia.initiative.infrastructure.web;
 
+import com.leori.enia.initiative.application.AssessRiskAIInitiativeCommand;
+import com.leori.enia.initiative.application.AssessRiskAIInitiativeUseCase;
 import com.leori.enia.initiative.application.CreateAIInitiativeCommand;
 import com.leori.enia.initiative.application.CreateAIInitiativeUseCase;
 import com.leori.enia.initiative.application.GetAIInitiativeUseCase;
@@ -31,6 +33,7 @@ public class AIInitiativeController {
     private final CreateAIInitiativeUseCase createAIInitiative;
     private final SubmitAIInitiativeUseCase submitAIInitiative;
     private final StartAssessmentAIInitiativeUseCase startAssessmentAIInitiative;
+    private final AssessRiskAIInitiativeUseCase assessRiskAIInitiative;
     private final AIInitiativeETagCodec etags;
 
     public AIInitiativeController(
@@ -38,12 +41,14 @@ public class AIInitiativeController {
             CreateAIInitiativeUseCase createAIInitiative,
             SubmitAIInitiativeUseCase submitAIInitiative,
             StartAssessmentAIInitiativeUseCase startAssessmentAIInitiative,
+            AssessRiskAIInitiativeUseCase assessRiskAIInitiative,
             AIInitiativeETagCodec etags
     ) {
         this.getAIInitiative = getAIInitiative;
         this.createAIInitiative = createAIInitiative;
         this.submitAIInitiative = submitAIInitiative;
         this.startAssessmentAIInitiative = startAssessmentAIInitiative;
+        this.assessRiskAIInitiative = assessRiskAIInitiative;
         this.etags = etags;
     }
 
@@ -70,6 +75,21 @@ public class AIInitiativeController {
         var initiativeId = new AIInitiativeId(id);
         var expected = etags.decode(headers.get(HttpHeaders.IF_MATCH));
         var result = startAssessmentAIInitiative.execute(new StartAssessmentAIInitiativeCommand(initiativeId, expected));
+        return ResponseEntity.ok()
+                .eTag(etags.encode(result.details().id(), result.revision()))
+                .body(AIInitiativeResponse.from(result.details()));
+    }
+
+    @PostMapping("/{id}/risk-assessment")
+    public ResponseEntity<AIInitiativeResponse> assessRisk(
+            @PathVariable UUID id,
+            @RequestHeader HttpHeaders headers,
+            @Valid @RequestBody AssessRiskAIInitiativeRequest request
+    ) {
+        var initiativeId = new AIInitiativeId(id);
+        var expected = etags.decode(headers.get(HttpHeaders.IF_MATCH));
+        var result = assessRiskAIInitiative.execute(
+                new AssessRiskAIInitiativeCommand(initiativeId, request.riskLevel(), expected));
         return ResponseEntity.ok()
                 .eTag(etags.encode(result.details().id(), result.revision()))
                 .body(AIInitiativeResponse.from(result.details()));

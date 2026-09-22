@@ -11,4 +11,8 @@ public record ExpectedRevision(AIInitiativeId initiativeId, long value) {
             throw new IllegalArgumentException("Expected revision must not be negative");
         }
     }
+
+    public boolean matches(AIInitiativeId actualInitiativeId, long actualRevision) {
+        return initiativeId.equals(actualInitiativeId) && value == actualRevision;
+    }
 }

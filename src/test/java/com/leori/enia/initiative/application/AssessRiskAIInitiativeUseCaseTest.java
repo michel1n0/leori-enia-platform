@@ -1,6 +1,8 @@
 package com.leori.enia.initiative.application;
 
 import com.leori.enia.initiative.application.exception.AIInitiativeNotFoundException;
+import com.leori.enia.initiative.application.exception.AIInitiativeInvalidTransitionException;
+import com.leori.enia.initiative.application.exception.AIInitiativeRevisionMismatchException;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
 import com.leori.enia.initiative.application.port.LoadedAIInitiative;
 import com.leori.enia.initiative.application.port.SavedAIInitiative;
@@ -37,15 +39,16 @@ class AssessRiskAIInitiativeUseCaseTest {
     @Test
     void should_assess_preliminary_risk_and_save_an_initiative() {
         AIInitiative initiative = createInitiativeUnderAssessment();
+        var eventsBefore = initiative.domainEvents();
         InMemoryAIInitiativeRepository repository =
                 new InMemoryAIInitiativeRepository(initiative);
         AssessRiskAIInitiativeUseCase useCase =
                 new AssessRiskAIInitiativeUseCase(repository, CLOCK);
 
-        AIInitiative result = useCase.execute(
+        VersionedAIInitiativeDetails result = useCase.execute(
                 new AssessRiskAIInitiativeCommand(
                         initiative.id(),
-                        RiskLevel.HIGH
+                        RiskLevel.HIGH, new ExpectedRevision(initiative.id(), 7)
                 )
         );
 
@@ -53,12 +56,15 @@ class AssessRiskAIInitiativeUseCaseTest {
         assertEquals(InitiativeStatus.RISK_ASSESSED, initiative.status());
         assertEquals(1, repository.saveCount());
         assertSame(initiative, repository.savedInitiative());
-        assertSame(initiative, result);
-        assertEquals(1, initiative.domainEvents().size());
+        assertEquals(AIInitiativeDetails.from(repository.savedInitiative()), result.details());
+        assertEquals(42, result.revision());
+        assertEquals(1, repository.loadCount);
+        assertEquals(eventsBefore.size() + 1, initiative.domainEvents().size());
+        assertEquals(eventsBefore, initiative.domainEvents().subList(0, eventsBefore.size()));
 
         AIInitiativeRiskAssessed event = assertInstanceOf(
                 AIInitiativeRiskAssessed.class,
-                initiative.domainEvents().getFirst()
+                initiative.domainEvents().getLast()
         );
         assertEquals(initiative.id(), event.initiativeId());
         assertEquals(RiskLevel.HIGH, event.riskLevel());
@@ -78,7 +84,7 @@ class AssessRiskAIInitiativeUseCaseTest {
                 () -> useCase.execute(
                         new AssessRiskAIInitiativeCommand(
                                 missingId,
-                                RiskLevel.MEDIUM
+                                RiskLevel.MEDIUM, new ExpectedRevision(missingId, 7)
                         )
                 )
         );
@@ -109,17 +115,18 @@ class AssessRiskAIInitiativeUseCaseTest {
     @Test
     void should_delegate_invalid_transition_enforcement_to_domain() {
         AIInitiative draftInitiative = createInitiative();
+        var eventsBefore = draftInitiative.domainEvents();
         InMemoryAIInitiativeRepository repository =
                 new InMemoryAIInitiativeRepository(draftInitiative);
         AssessRiskAIInitiativeUseCase useCase =
                 new AssessRiskAIInitiativeUseCase(repository, CLOCK);
 
-        IllegalStateException exception = assertThrows(
-                IllegalStateException.class,
+        AIInitiativeInvalidTransitionException exception = assertThrows(
+                AIInitiativeInvalidTransitionException.class,
                 () -> useCase.execute(
                         new AssessRiskAIInitiativeCommand(
                                 draftInitiative.id(),
-                                RiskLevel.LOW
+                                RiskLevel.LOW, new ExpectedRevision(draftInitiative.id(), 7)
                         )
                 )
         );
@@ -128,12 +135,18 @@ class AssessRiskAIInitiativeUseCaseTest {
                 "Expected initiative status UNDER_ASSESSMENT but was DRAFT",
                 exception.getMessage()
         );
+        assertEquals(IllegalStateException.class, exception.getCause().getClass());
+        assertEquals(exception.getMessage(), exception.getCause().getMessage());
+        assertEquals(InitiativeStatus.DRAFT, draftInitiative.status());
+        assertEquals(RiskLevel.NOT_ASSESSED, draftInitiative.preliminaryRisk());
+        assertEquals(eventsBefore, draftInitiative.domainEvents());
         assertEquals(0, repository.saveCount());
     }
 
     @Test
     void should_delegate_not_assessed_risk_rejection_to_domain() {
         AIInitiative initiative = createInitiativeUnderAssessment();
+        var eventsBefore = initiative.domainEvents();
         InMemoryAIInitiativeRepository repository =
                 new InMemoryAIInitiativeRepository(initiative);
         AssessRiskAIInitiativeUseCase useCase =
@@ -144,7 +157,7 @@ class AssessRiskAIInitiativeUseCaseTest {
                 () -> useCase.execute(
                         new AssessRiskAIInitiativeCommand(
                                 initiative.id(),
-                                RiskLevel.NOT_ASSESSED
+                                RiskLevel.NOT_ASSESSED, new ExpectedRevision(initiative.id(), 7)
                         )
                 )
         );
@@ -155,6 +168,73 @@ class AssessRiskAIInitiativeUseCaseTest {
         );
         assertEquals(InitiativeStatus.UNDER_ASSESSMENT, initiative.status());
         assertEquals(RiskLevel.NOT_ASSESSED, initiative.preliminaryRisk());
+        assertEquals(eventsBefore, initiative.domainEvents());
+        assertEquals(0, repository.saveCount());
+    }
+
+    @Test
+    void stale_revision_does_not_mutate_save_or_add_events() {
+        AIInitiative initiative = createInitiativeUnderAssessment();
+        var eventsBefore = initiative.domainEvents();
+        InMemoryAIInitiativeRepository repository = new InMemoryAIInitiativeRepository(initiative);
+        AssessRiskAIInitiativeUseCase useCase = new AssessRiskAIInitiativeUseCase(repository, CLOCK);
+
+        assertThrows(AIInitiativeRevisionMismatchException.class,
+                () -> useCase.execute(new AssessRiskAIInitiativeCommand(
+                        initiative.id(), RiskLevel.HIGH, new ExpectedRevision(initiative.id(), 6))));
+
+        assertEquals(InitiativeStatus.UNDER_ASSESSMENT, initiative.status());
+        assertEquals(RiskLevel.NOT_ASSESSED, initiative.preliminaryRisk());
+        assertEquals(eventsBefore, initiative.domainEvents());
+        assertEquals(0, repository.saveCount());
+    }
+
+    @Test
+    void foreign_revision_does_not_mutate_save_or_add_events() {
+        AIInitiative initiative = createInitiativeUnderAssessment();
+        var eventsBefore = initiative.domainEvents();
+        InMemoryAIInitiativeRepository repository = new InMemoryAIInitiativeRepository(initiative);
+        AssessRiskAIInitiativeUseCase useCase = new AssessRiskAIInitiativeUseCase(repository, CLOCK);
+
+        assertThrows(AIInitiativeRevisionMismatchException.class,
+                () -> useCase.execute(new AssessRiskAIInitiativeCommand(
+                        initiative.id(), RiskLevel.HIGH, new ExpectedRevision(AIInitiativeId.generate(), 7))));
+
+        assertEquals(InitiativeStatus.UNDER_ASSESSMENT, initiative.status());
+        assertEquals(RiskLevel.NOT_ASSESSED, initiative.preliminaryRisk());
+        assertEquals(eventsBefore, initiative.domainEvents());
+        assertEquals(0, repository.saveCount());
+    }
+
+    @Test
+    void null_risk_preserves_domain_validation_without_mutation() {
+        AIInitiative initiative = createInitiativeUnderAssessment();
+        var eventsBefore = initiative.domainEvents();
+        InMemoryAIInitiativeRepository repository = new InMemoryAIInitiativeRepository(initiative);
+        AssessRiskAIInitiativeUseCase useCase = new AssessRiskAIInitiativeUseCase(repository, CLOCK);
+
+        NullPointerException exception = assertThrows(NullPointerException.class,
+                () -> useCase.execute(new AssessRiskAIInitiativeCommand(
+                        initiative.id(), null, new ExpectedRevision(initiative.id(), 7))));
+
+        assertEquals("Risk level is required", exception.getMessage());
+        assertEquals(InitiativeStatus.UNDER_ASSESSMENT, initiative.status());
+        assertEquals(RiskLevel.NOT_ASSESSED, initiative.preliminaryRisk());
+        assertEquals(eventsBefore, initiative.domainEvents());
+        assertEquals(0, repository.saveCount());
+    }
+
+    @Test
+    void null_expected_revision_is_rejected_before_lookup() {
+        InMemoryAIInitiativeRepository repository = new InMemoryAIInitiativeRepository();
+        AssessRiskAIInitiativeUseCase useCase = new AssessRiskAIInitiativeUseCase(repository, CLOCK);
+
+        NullPointerException exception = assertThrows(NullPointerException.class,
+                () -> useCase.execute(new AssessRiskAIInitiativeCommand(
+                        AIInitiativeId.generate(), RiskLevel.HIGH, null)));
+
+        assertEquals("Expected revision is required", exception.getMessage());
+        assertEquals(0, repository.loadCount);
         assertEquals(0, repository.saveCount());
     }
 
@@ -162,7 +242,6 @@ class AssessRiskAIInitiativeUseCaseTest {
         AIInitiative initiative = createInitiative();
         initiative.submit(SUBMITTED_AT);
         initiative.startAssessment();
-        initiative.clearDomainEvents();
         return initiative;
     }
 
@@ -185,6 +264,7 @@ class AssessRiskAIInitiativeUseCaseTest {
                 new HashMap<>();
         private AIInitiative savedInitiative;
         private int saveCount;
+        private int loadCount;
 
         private InMemoryAIInitiativeRepository(AIInitiative... initiatives) {
             for (AIInitiative initiative : initiatives) {
@@ -204,11 +284,12 @@ class AssessRiskAIInitiativeUseCaseTest {
             initiatives.put(initiative.id(), initiative);
             savedInitiative = initiative;
             saveCount++;
-            return new SavedAIInitiative(initiative, loaded.version() + 1);
+            return new SavedAIInitiative(initiative, 42);
         }
 
         @Override
         public Optional<LoadedAIInitiative> findById(AIInitiativeId id) {
+            loadCount++;
             return Optional.ofNullable(initiatives.get(id))
                     .map(initiative -> new LoadedAIInitiative(initiative, 7));
         }
