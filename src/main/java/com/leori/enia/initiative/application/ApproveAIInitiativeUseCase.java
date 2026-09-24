@@ -1,11 +1,15 @@
 package com.leori.enia.initiative.application;
 
 import com.leori.enia.initiative.application.exception.AIInitiativeNotFoundException;
+import com.leori.enia.initiative.application.exception.AIInitiativeInvalidTransitionException;
+import com.leori.enia.initiative.application.exception.AIInitiativeRevisionMismatchException;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
 import com.leori.enia.initiative.application.port.LoadedAIInitiative;
+import com.leori.enia.initiative.application.port.SavedAIInitiative;
 import com.leori.enia.initiative.domain.AIInitiative;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Objects;
 
 public class ApproveAIInitiativeUseCase {
@@ -24,20 +28,31 @@ public class ApproveAIInitiativeUseCase {
         this.clock = Objects.requireNonNull(clock, "Clock is required");
     }
 
-    public AIInitiative execute(ApproveAIInitiativeCommand command) {
+    public VersionedAIInitiativeDetails execute(ApproveAIInitiativeCommand command) {
         Objects.requireNonNull(
                 command,
                 "Approve AI initiative command is required"
         );
+        Objects.requireNonNull(command.expectedRevision(), "Expected revision is required");
 
         LoadedAIInitiative loaded = repository.findById(command.initiativeId())
                 .orElseThrow(() -> new AIInitiativeNotFoundException(
                         command.initiativeId()
                 ));
         AIInitiative initiative = loaded.initiative();
+        if (!command.expectedRevision().matches(loaded.initiative().id(), loaded.version())) {
+            throw new AIInitiativeRevisionMismatchException();
+        }
 
-        initiative.approve(clock.instant());
+        Instant occurredAt = clock.instant();
+        try {
+            initiative.approve(occurredAt);
+        } catch (IllegalStateException exception) {
+            throw new AIInitiativeInvalidTransitionException(exception);
+        }
 
-        return repository.save(loaded).initiative();
+        SavedAIInitiative saved = repository.save(loaded);
+        return new VersionedAIInitiativeDetails(
+                AIInitiativeDetails.from(saved.initiative()), saved.version());
     }
 }

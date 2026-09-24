@@ -236,7 +236,10 @@ class AIInitiativeApplicationTransactionIntegrationTest {
                         before.id(), RiskLevel.HIGH, new ExpectedRevision(before.id(), 0)));
                 yield repository.delegate.findById(before.id()).orElseThrow().initiative();
             }
-            case APPROVE -> approve.execute(new ApproveAIInitiativeCommand(before.id()));
+            case APPROVE -> {
+                approve.execute(new ApproveAIInitiativeCommand(before.id(), new ExpectedRevision(before.id(), 0)));
+                yield repository.delegate.findById(before.id()).orElseThrow().initiative();
+            }
             case REJECT -> reject.execute(new RejectAIInitiativeCommand(before.id(), "Residual risk unacceptable"));
         };
     }

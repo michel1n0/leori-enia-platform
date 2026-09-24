@@ -159,7 +159,9 @@ class PostgreSQLAIInitiativeOptimisticLockingIntegrationTest {
         assessRisk.execute(new AssessRiskAIInitiativeCommand(
                 initial.id(), RiskLevel.HIGH, new ExpectedRevision(initial.id(), 2)));
         assertEquals(3L, load(initial.id()).version());
-        approve.execute(new ApproveAIInitiativeCommand(initial.id()));
+        var approved = approve.execute(new ApproveAIInitiativeCommand(
+                initial.id(), new ExpectedRevision(initial.id(), 3)));
+        assertEquals(4L, approved.revision());
 
         assertWinner(initial.id(), 4L);
     }
@@ -234,7 +236,8 @@ class PostgreSQLAIInitiativeOptimisticLockingIntegrationTest {
             try {
                 assertTrue(pausingRepository.deferredSaveReached.await(15, TimeUnit.SECONDS));
                 assertEquals(InitiativeStatus.APPROVED,
-                        approve.execute(new ApproveAIInitiativeCommand(initial.id())).status());
+                        approve.execute(new ApproveAIInitiativeCommand(
+                                initial.id(), new ExpectedRevision(initial.id(), 0))).details().status());
             } finally {
                 pausingRepository.resumeDeferredSave.countDown();
             }
@@ -259,8 +262,9 @@ class PostgreSQLAIInitiativeOptimisticLockingIntegrationTest {
             try {
                 assertTrue(pausingRepository.loaded.await(15, TimeUnit.SECONDS), "B must load first");
                 // B's application transaction is still open with version 0.
-                AIInitiative winner = approve.execute(new ApproveAIInitiativeCommand(initial.id()));
-                assertEquals(InitiativeStatus.APPROVED, winner.status());
+                var winner = approve.execute(new ApproveAIInitiativeCommand(
+                        initial.id(), new ExpectedRevision(initial.id(), 0)));
+                assertEquals(InitiativeStatus.APPROVED, winner.details().status());
                 assertWinner(initial.id(), 1L);
             } finally {
                 pausingRepository.resume.countDown();
