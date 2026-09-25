@@ -1,6 +1,8 @@
 package com.leori.enia.initiative.application;
 
+import com.leori.enia.initiative.application.exception.AIInitiativeInvalidTransitionException;
 import com.leori.enia.initiative.application.exception.AIInitiativeNotFoundException;
+import com.leori.enia.initiative.application.exception.AIInitiativeRevisionMismatchException;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
 import com.leori.enia.initiative.application.port.LoadedAIInitiative;
 import com.leori.enia.initiative.application.port.SavedAIInitiative;
@@ -12,156 +14,257 @@ import com.leori.enia.initiative.domain.event.AIInitiativeRejected;
 import com.leori.enia.organization.domain.OrganizationId;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
 
 class RejectAIInitiativeUseCaseTest {
 
-    private static final Instant CREATED_AT =
-            Instant.parse("2026-09-15T14:00:00Z");
-    private static final Instant SUBMITTED_AT =
-            Instant.parse("2026-09-16T13:00:00Z");
-    private static final Instant ASSESSED_AT =
-            Instant.parse("2026-09-16T14:00:00Z");
-    private static final Instant REJECTED_AT =
-            Instant.parse("2026-09-16T15:00:00Z");
+    private static final Instant CREATED_AT = Instant.parse("2026-09-15T14:00:00Z");
+    private static final Instant SUBMITTED_AT = Instant.parse("2026-09-16T13:00:00Z");
+    private static final Instant ASSESSED_AT = Instant.parse("2026-09-16T14:00:00Z");
+    private static final Instant REJECTED_AT = Instant.parse("2026-09-16T15:00:00Z");
     private static final Clock CLOCK = Clock.fixed(REJECTED_AT, ZoneOffset.UTC);
 
-    @Test
-    void should_reject_and_save_a_risk_assessed_initiative() {
-        AIInitiative initiative = createRiskAssessedInitiative();
-        InMemoryAIInitiativeRepository repository =
-                new InMemoryAIInitiativeRepository(initiative);
-        RejectAIInitiativeUseCase useCase =
-                new RejectAIInitiativeUseCase(repository, CLOCK);
+    private final AIInitiativeRepository repository = mock(AIInitiativeRepository.class);
 
-        AIInitiative result = useCase.execute(
-                new RejectAIInitiativeCommand(
-                        initiative.id(),
-                        "  Riesgo residual no aceptable  "
-                )
-        );
+    @ParameterizedTest
+    @EnumSource(value = RiskLevel.class, names = {"LOW", "MEDIUM", "HIGH"})
+    void should_reject_preserving_risk_events_and_the_actual_saved_revision(RiskLevel risk) {
+        AIInitiative initiative = createRiskAssessedInitiative(risk);
+        var eventsBefore = initiative.domainEvents();
+        LoadedAIInitiative loaded = arrangeLoaded(initiative);
+        when(repository.save(same(loaded))).thenReturn(new SavedAIInitiative(initiative, 42));
+        Clock clock = mock(Clock.class);
+        when(clock.instant()).thenReturn(REJECTED_AT);
+
+        VersionedAIInitiativeDetails result = new RejectAIInitiativeUseCase(repository, clock).execute(
+                new RejectAIInitiativeCommand(initiative.id(), "  Riesgo residual no aceptable  ",
+                        new ExpectedRevision(initiative.id(), 7)));
 
         assertEquals(InitiativeStatus.REJECTED, initiative.status());
-        assertEquals("Riesgo residual no aceptable", result.rejectionReason());
-        assertEquals(result.rejectionReason(), repository.savedInitiative().rejectionReason());
-        assertEquals(1, repository.saveCount());
-        assertSame(initiative, repository.savedInitiative());
-        assertSame(initiative, result);
-        assertEquals(1, initiative.domainEvents().size());
-
-        AIInitiativeRejected event = assertInstanceOf(
-                AIInitiativeRejected.class,
-                initiative.domainEvents().getFirst()
-        );
+        assertEquals(risk, initiative.preliminaryRisk());
+        assertEquals("Riesgo residual no aceptable", initiative.rejectionReason());
+        assertEquals(AIInitiativeDetails.from(initiative), result.details());
+        assertEquals(42, result.revision());
+        assertNotEquals(8, result.revision());
+        var order = inOrder(repository, clock);
+        order.verify(repository).findById(initiative.id());
+        order.verify(clock).instant();
+        order.verify(repository).save(same(loaded));
+        verifyNoMoreInteractions(repository, clock);
+        assertEquals(eventsBefore.size() + 1, initiative.domainEvents().size());
+        assertEquals(eventsBefore, initiative.domainEvents().subList(0, eventsBefore.size()));
+        AIInitiativeRejected event = assertInstanceOf(AIInitiativeRejected.class,
+                initiative.domainEvents().getLast());
         assertEquals(initiative.id(), event.initiativeId());
-        assertEquals("Riesgo residual no aceptable", event.reason());
+        assertEquals(initiative.rejectionReason(), event.reason());
         assertEquals(REJECTED_AT, event.occurredAt());
     }
 
     @Test
-    void should_fail_when_initiative_does_not_exist() {
-        InMemoryAIInitiativeRepository repository =
-                new InMemoryAIInitiativeRepository();
-        RejectAIInitiativeUseCase useCase =
-                new RejectAIInitiativeUseCase(repository, CLOCK);
-        AIInitiativeId missingId = AIInitiativeId.generate();
+    void should_return_details_from_the_repository_saved_aggregate() {
+        AIInitiative initiative = createRiskAssessedInitiative(RiskLevel.HIGH);
+        LoadedAIInitiative loaded = arrangeLoaded(initiative);
+        AIInitiative saved = AIInitiative.rehydrate(initiative.id(), initiative.organizationId(),
+                initiative.name(), initiative.description(), InitiativeStatus.REJECTED, RiskLevel.HIGH,
+                initiative.usesPersonalData(), initiative.impactsRights(), CREATED_AT, "Stored reason");
+        when(repository.save(same(loaded))).thenReturn(new SavedAIInitiative(saved, 42));
 
-        AIInitiativeNotFoundException exception = assertThrows(
-                AIInitiativeNotFoundException.class,
-                () -> useCase.execute(
-                        new RejectAIInitiativeCommand(missingId, "Reason")
-                )
-        );
+        var result = new RejectAIInitiativeUseCase(repository, CLOCK).execute(command(initiative, "Reason"));
+
+        assertEquals(AIInitiativeDetails.from(saved), result.details());
+        assertEquals(42, result.revision());
+        verify(repository).findById(initiative.id());
+        verify(repository).save(same(loaded));
+        verifyNoMoreInteractions(repository);
+    }
+
+    @Test
+    void should_fail_when_initiative_does_not_exist() {
+        AIInitiativeId missingId = AIInitiativeId.generate();
+        when(repository.findById(missingId)).thenReturn(Optional.empty());
+        Clock clock = mock(Clock.class);
+
+        var exception = assertThrows(AIInitiativeNotFoundException.class,
+                () -> new RejectAIInitiativeUseCase(repository, clock).execute(
+                        new RejectAIInitiativeCommand(missingId, "Reason", new ExpectedRevision(missingId, 7))));
 
         assertEquals("AI initiative not found: " + missingId, exception.getMessage());
-        assertEquals(0, repository.saveCount());
+        verify(repository).findById(missingId);
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(clock);
     }
 
     @Test
-    void should_reject_null_command() {
-        InMemoryAIInitiativeRepository repository =
-                new InMemoryAIInitiativeRepository();
-        RejectAIInitiativeUseCase useCase =
-                new RejectAIInitiativeUseCase(repository, CLOCK);
-
-        NullPointerException exception = assertThrows(
-                NullPointerException.class,
-                () -> useCase.execute(null)
-        );
-
-        assertEquals(
-                "Reject AI initiative command is required",
-                exception.getMessage()
-        );
-        assertEquals(0, repository.saveCount());
+    void should_reject_null_command_before_lookup() {
+        assertInvalidCommand(null, "Reject AI initiative command is required");
     }
 
     @Test
-    void should_delegate_invalid_transition_enforcement_to_domain() {
-        AIInitiative draftInitiative = createInitiative();
-        InMemoryAIInitiativeRepository repository =
-                new InMemoryAIInitiativeRepository(draftInitiative);
-        RejectAIInitiativeUseCase useCase =
-                new RejectAIInitiativeUseCase(repository, CLOCK);
+    void should_reject_null_initiative_id_before_expected_revision_and_lookup() {
+        assertInvalidCommand(new RejectAIInitiativeCommand(null, "Reason", null), "AI initiative id is required");
+    }
 
-        IllegalStateException exception = assertThrows(
-                IllegalStateException.class,
-                () -> useCase.execute(
-                        new RejectAIInitiativeCommand(
-                                draftInitiative.id(),
-                                "Reason"
-                        )
-                )
-        );
+    @Test
+    void should_reject_null_expected_revision_before_lookup() {
+        assertInvalidCommand(new RejectAIInitiativeCommand(AIInitiativeId.generate(), "Reason", null),
+                "Expected revision is required");
+    }
 
-        assertEquals(
-                "Expected initiative status RISK_ASSESSED but was DRAFT",
-                exception.getMessage()
-        );
-        assertEquals(0, repository.saveCount());
+    private void assertInvalidCommand(RejectAIInitiativeCommand command, String message) {
+        Clock clock = mock(Clock.class);
+        var exception = assertThrows(NullPointerException.class,
+                () -> new RejectAIInitiativeUseCase(repository, clock).execute(command));
+        assertEquals(message, exception.getMessage());
+        verifyNoInteractions(repository, clock);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void stale_or_foreign_revision_does_not_access_clock_mutate_reason_or_events(boolean foreign) {
+        AIInitiative initiative = createRiskAssessedInitiative(RiskLevel.HIGH);
+        var before = AIInitiativeDetails.from(initiative);
+        var eventsBefore = initiative.domainEvents();
+        arrangeLoaded(initiative);
+        Clock clock = mock(Clock.class);
+        ExpectedRevision expected = foreign
+                ? new ExpectedRevision(AIInitiativeId.generate(), 7)
+                : new ExpectedRevision(initiative.id(), 6);
+
+        assertThrows(AIInitiativeRevisionMismatchException.class,
+                () -> new RejectAIInitiativeUseCase(repository, clock).execute(
+                        new RejectAIInitiativeCommand(initiative.id(), "Reason", expected)));
+
+        assertEquals(before, AIInitiativeDetails.from(initiative));
+        assertNull(initiative.rejectionReason());
+        assertEquals(eventsBefore, initiative.domainEvents());
+        verify(repository).findById(initiative.id());
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(clock);
+    }
+
+    @Test
+    void should_translate_only_invalid_domain_lifecycle_without_mutation() {
+        AIInitiative initiative = createInitiative();
+        var before = AIInitiativeDetails.from(initiative);
+        var eventsBefore = initiative.domainEvents();
+        arrangeLoaded(initiative);
+
+        var exception = assertThrows(AIInitiativeInvalidTransitionException.class,
+                () -> new RejectAIInitiativeUseCase(repository, CLOCK).execute(command(initiative, "Reason")));
+
+        assertEquals("Expected initiative status RISK_ASSESSED but was DRAFT", exception.getMessage());
+        assertEquals(IllegalStateException.class, exception.getCause().getClass());
+        assertEquals(exception.getMessage(), exception.getCause().getMessage());
+        assertEquals(before, AIInitiativeDetails.from(initiative));
+        assertEquals(eventsBefore, initiative.domainEvents());
+        verify(repository).findById(initiative.id());
+        verifyNoMoreInteractions(repository);
     }
 
     @ParameterizedTest
     @NullAndEmptySource
-    @ValueSource(strings = {"   "})
-    void should_delegate_invalid_reason_enforcement_to_domain(String reason) {
-        AIInitiative initiative = createRiskAssessedInitiative();
-        InMemoryAIInitiativeRepository repository =
-                new InMemoryAIInitiativeRepository(initiative);
-        RejectAIInitiativeUseCase useCase =
-                new RejectAIInitiativeUseCase(repository, CLOCK);
+    @ValueSource(strings = {"   ", "\t\n", "\u0000", "\u2003", "\u0000 \u2003\t"})
+    void should_delegate_invalid_reason_to_domain_without_translation_or_mutation(String reason) {
+        AIInitiative initiative = createRiskAssessedInitiative(RiskLevel.HIGH);
+        var before = AIInitiativeDetails.from(initiative);
+        var eventsBefore = initiative.domainEvents();
+        arrangeLoaded(initiative);
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> useCase.execute(
-                        new RejectAIInitiativeCommand(initiative.id(), reason)
-                )
-        );
+        var exception = assertThrows(IllegalArgumentException.class,
+                () -> new RejectAIInitiativeUseCase(repository, CLOCK).execute(command(initiative, reason)));
 
         assertEquals("Rejection reason is required", exception.getMessage());
-        assertEquals(InitiativeStatus.RISK_ASSESSED, initiative.status());
-        assertEquals(0, repository.saveCount());
+        assertEquals(before, AIInitiativeDetails.from(initiative));
+        assertEquals(eventsBefore, initiative.domainEvents());
+        verify(repository).findById(initiative.id());
+        verifyNoMoreInteractions(repository);
     }
 
-    private AIInitiative createRiskAssessedInitiative() {
+    @Test
+    void clock_failure_is_not_translated_as_a_lifecycle_failure() {
+        AIInitiative initiative = createRiskAssessedInitiative(RiskLevel.HIGH);
+        var before = AIInitiativeDetails.from(initiative);
+        var eventsBefore = initiative.domainEvents();
+        arrangeLoaded(initiative);
+        Clock clock = mock(Clock.class);
+        var failure = new IllegalStateException("Clock unavailable");
+        when(clock.instant()).thenThrow(failure);
+
+        assertSame(failure, assertThrows(IllegalStateException.class,
+                () -> new RejectAIInitiativeUseCase(repository, clock).execute(command(initiative, "Reason"))));
+
+        assertEquals(before, AIInitiativeDetails.from(initiative));
+        assertEquals(eventsBefore, initiative.domainEvents());
+        verify(repository).findById(initiative.id());
+        verifyNoMoreInteractions(repository);
+    }
+
+    @Test
+    void save_failure_is_not_translated_as_a_lifecycle_failure() {
+        AIInitiative initiative = createRiskAssessedInitiative(RiskLevel.HIGH);
+        LoadedAIInitiative loaded = arrangeLoaded(initiative);
+        var failure = new IllegalStateException("Save unavailable");
+        when(repository.save(same(loaded))).thenThrow(failure);
+
+        assertSame(failure, assertThrows(IllegalStateException.class,
+                () -> new RejectAIInitiativeUseCase(repository, CLOCK).execute(command(initiative, "Reason"))));
+
+        verify(repository).findById(initiative.id());
+        verify(repository).save(same(loaded));
+        verifyNoMoreInteractions(repository);
+    }
+
+    @Test
+    void load_failure_is_not_translated_or_followed_by_clock_access() {
+        AIInitiative initiative = createInitiative();
+        var failure = new IllegalStateException("Load unavailable");
+        when(repository.findById(initiative.id())).thenThrow(failure);
+        Clock clock = mock(Clock.class);
+
+        assertSame(failure, assertThrows(IllegalStateException.class,
+                () -> new RejectAIInitiativeUseCase(repository, clock).execute(command(initiative, "Reason"))));
+
+        verify(repository).findById(initiative.id());
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(clock);
+    }
+
+    private LoadedAIInitiative arrangeLoaded(AIInitiative initiative) {
+        var loaded = new LoadedAIInitiative(initiative, 7);
+        when(repository.findById(initiative.id())).thenReturn(Optional.of(loaded));
+        return loaded;
+    }
+
+    private RejectAIInitiativeCommand command(AIInitiative initiative, String reason) {
+        return new RejectAIInitiativeCommand(initiative.id(), reason, new ExpectedRevision(initiative.id(), 7));
+    }
+
+    private AIInitiative createRiskAssessedInitiative(RiskLevel risk) {
         AIInitiative initiative = createInitiative();
         initiative.submit(SUBMITTED_AT);
         initiative.startAssessment();
-        initiative.assessRisk(RiskLevel.HIGH, ASSESSED_AT);
-        initiative.clearDomainEvents();
+        initiative.assessRisk(risk, ASSESSED_AT);
         return initiative;
     }
 
@@ -175,49 +278,5 @@ class RejectAIInitiativeUseCaseTest {
                 .impactsRights(true)
                 .createdAt(CREATED_AT)
                 .build();
-    }
-
-    private static final class InMemoryAIInitiativeRepository
-            implements AIInitiativeRepository {
-
-        private final Map<AIInitiativeId, AIInitiative> initiatives =
-                new HashMap<>();
-        private AIInitiative savedInitiative;
-        private int saveCount;
-
-        private InMemoryAIInitiativeRepository(AIInitiative... initiatives) {
-            for (AIInitiative initiative : initiatives) {
-                this.initiatives.put(initiative.id(), initiative);
-            }
-        }
-
-        @Override
-        public AIInitiative create(AIInitiative initiative) {
-            throw new AssertionError("Lifecycle changes must use the loaded revision");
-        }
-
-        @Override
-        public SavedAIInitiative save(LoadedAIInitiative loaded) {
-            assertEquals(7L, loaded.version(), "Must preserve the loaded revision");
-            AIInitiative initiative = loaded.initiative();
-            initiatives.put(initiative.id(), initiative);
-            savedInitiative = initiative;
-            saveCount++;
-            return new SavedAIInitiative(initiative, loaded.version() + 1);
-        }
-
-        @Override
-        public Optional<LoadedAIInitiative> findById(AIInitiativeId id) {
-            return Optional.ofNullable(initiatives.get(id))
-                    .map(initiative -> new LoadedAIInitiative(initiative, 7));
-        }
-
-        AIInitiative savedInitiative() {
-            return savedInitiative;
-        }
-
-        int saveCount() {
-            return saveCount;
-        }
     }
 }

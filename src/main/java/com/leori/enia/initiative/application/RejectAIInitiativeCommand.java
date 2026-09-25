@@ -4,6 +4,7 @@ import com.leori.enia.initiative.domain.AIInitiativeId;
 
 public record RejectAIInitiativeCommand(
         AIInitiativeId initiativeId,
-        String reason
+        String reason,
+        ExpectedRevision expectedRevision
 ) {
 }

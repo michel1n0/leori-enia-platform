@@ -25,6 +25,8 @@ import com.leori.enia.organization.domain.OrganizationId;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -232,7 +234,8 @@ class PostgreSQLAIInitiativeOptimisticLockingIntegrationTest {
 
         try (var executor = Executors.newSingleThreadExecutor()) {
             var loser = executor.submit(() -> reject.execute(
-                    new RejectAIInitiativeCommand(initial.id(), "Residual risk unacceptable")));
+                    new RejectAIInitiativeCommand(initial.id(), "Residual risk unacceptable",
+                            new ExpectedRevision(initial.id(), 0))));
             try {
                 assertTrue(pausingRepository.deferredSaveReached.await(15, TimeUnit.SECONDS));
                 assertEquals(InitiativeStatus.APPROVED,
@@ -258,7 +261,8 @@ class PostgreSQLAIInitiativeOptimisticLockingIntegrationTest {
 
         try (var executor = Executors.newSingleThreadExecutor()) {
             var staleExecution = executor.submit(() -> reject.execute(
-                    new RejectAIInitiativeCommand(initial.id(), "Residual risk unacceptable")));
+                    new RejectAIInitiativeCommand(initial.id(), "Residual risk unacceptable",
+                            new ExpectedRevision(initial.id(), 0))));
             try {
                 assertTrue(pausingRepository.loaded.await(15, TimeUnit.SECONDS), "B must load first");
                 // B's application transaction is still open with version 0.
@@ -278,6 +282,57 @@ class PostgreSQLAIInitiativeOptimisticLockingIntegrationTest {
             assertWinner(initial.id(), 1L);
         }
         assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void rejection_winner_survives_concurrent_reject_or_approve(boolean loserApproves) throws Exception {
+        AIInitiative initial = createRiskAssessedInitiative();
+        transactions.execute(status -> adapter.create(initial));
+        pausingRepository.pauseNextLoad.set(true);
+
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var loser = executor.submit(() -> {
+                var expected = new ExpectedRevision(initial.id(), 0);
+                return loserApproves
+                        ? approve.execute(new ApproveAIInitiativeCommand(initial.id(), expected))
+                        : reject.execute(new RejectAIInitiativeCommand(initial.id(), "Losing reason", expected));
+            });
+            try {
+                assertTrue(pausingRepository.loaded.await(15, TimeUnit.SECONDS));
+                var winner = reject.execute(new RejectAIInitiativeCommand(initial.id(), "  Winning reason  ",
+                        new ExpectedRevision(initial.id(), 0)));
+                assertEquals(InitiativeStatus.REJECTED, winner.details().status());
+                assertEquals("Winning reason", winner.details().rejectionReason());
+                assertEquals(1L, winner.revision());
+                assertRejectionWinner(initial.id());
+            } finally {
+                pausingRepository.resume.countDown();
+            }
+            ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> loser.get(15, TimeUnit.SECONDS));
+            AIInitiativeRevisionMismatchException conflict = assertInstanceOf(
+                    AIInitiativeRevisionMismatchException.class, failure.getCause());
+            assertInstanceOf(ObjectOptimisticLockingFailureException.class, conflict.getCause());
+            assertRejectionWinner(initial.id());
+        }
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+    }
+
+    private void assertRejectionWinner(AIInitiativeId id) {
+        LoadedAIInitiative stored = load(id);
+        assertEquals(InitiativeStatus.REJECTED, stored.initiative().status());
+        assertEquals(RiskLevel.HIGH, stored.initiative().preliminaryRisk());
+        assertEquals("Winning reason", stored.initiative().rejectionReason());
+        assertEquals(1L, stored.version());
+        assertEquals("REJECTED", jdbc.queryForObject(
+                "select status from ai_initiatives where id = ?", String.class, id.value()));
+        assertEquals("Winning reason", jdbc.queryForObject(
+                "select rejection_reason from ai_initiatives where id = ?", String.class, id.value()));
+        assertEquals(1L, jdbc.queryForObject(
+                "select version from ai_initiatives where id = ?", Long.class, id.value()));
+        assertEquals(1, jdbc.queryForObject(
+                "select count(*) from ai_initiatives where id = ?", Integer.class, id.value()));
     }
 
     @Test

@@ -7,6 +7,8 @@ import com.leori.enia.initiative.application.AssessRiskAIInitiativeUseCase;
 import com.leori.enia.initiative.application.CreateAIInitiativeCommand;
 import com.leori.enia.initiative.application.CreateAIInitiativeUseCase;
 import com.leori.enia.initiative.application.GetAIInitiativeUseCase;
+import com.leori.enia.initiative.application.RejectAIInitiativeCommand;
+import com.leori.enia.initiative.application.RejectAIInitiativeUseCase;
 import com.leori.enia.initiative.application.StartAssessmentAIInitiativeCommand;
 import com.leori.enia.initiative.application.StartAssessmentAIInitiativeUseCase;
 import com.leori.enia.initiative.application.SubmitAIInitiativeCommand;
@@ -37,6 +39,7 @@ public class AIInitiativeController {
     private final StartAssessmentAIInitiativeUseCase startAssessmentAIInitiative;
     private final AssessRiskAIInitiativeUseCase assessRiskAIInitiative;
     private final ApproveAIInitiativeUseCase approveAIInitiative;
+    private final RejectAIInitiativeUseCase rejectAIInitiative;
     private final AIInitiativeETagCodec etags;
 
     public AIInitiativeController(
@@ -46,6 +49,7 @@ public class AIInitiativeController {
             StartAssessmentAIInitiativeUseCase startAssessmentAIInitiative,
             AssessRiskAIInitiativeUseCase assessRiskAIInitiative,
             ApproveAIInitiativeUseCase approveAIInitiative,
+            RejectAIInitiativeUseCase rejectAIInitiative,
             AIInitiativeETagCodec etags
     ) {
         this.getAIInitiative = getAIInitiative;
@@ -54,6 +58,7 @@ public class AIInitiativeController {
         this.startAssessmentAIInitiative = startAssessmentAIInitiative;
         this.assessRiskAIInitiative = assessRiskAIInitiative;
         this.approveAIInitiative = approveAIInitiative;
+        this.rejectAIInitiative = rejectAIInitiative;
         this.etags = etags;
     }
 
@@ -105,6 +110,21 @@ public class AIInitiativeController {
         var initiativeId = new AIInitiativeId(id);
         var expected = etags.decode(headers.get(HttpHeaders.IF_MATCH));
         var result = approveAIInitiative.execute(new ApproveAIInitiativeCommand(initiativeId, expected));
+        return ResponseEntity.ok()
+                .eTag(etags.encode(result.details().id(), result.revision()))
+                .body(AIInitiativeResponse.from(result.details()));
+    }
+
+    @PostMapping("/{id}/reject")
+    public ResponseEntity<AIInitiativeResponse> reject(
+            @PathVariable UUID id,
+            @RequestHeader HttpHeaders headers,
+            @Valid @RequestBody RejectAIInitiativeRequest request
+    ) {
+        var initiativeId = new AIInitiativeId(id);
+        var expected = etags.decode(headers.get(HttpHeaders.IF_MATCH));
+        var result = rejectAIInitiative.execute(
+                new RejectAIInitiativeCommand(initiativeId, request.reason(), expected));
         return ResponseEntity.ok()
                 .eTag(etags.encode(result.details().id(), result.revision()))
                 .body(AIInitiativeResponse.from(result.details()));

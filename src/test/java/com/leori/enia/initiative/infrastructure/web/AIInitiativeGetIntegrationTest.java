@@ -3,6 +3,7 @@ package com.leori.enia.initiative.infrastructure.web;
 import com.leori.enia.LeoriEniaApplication;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
 import com.leori.enia.initiative.application.RejectAIInitiativeCommand;
+import com.leori.enia.initiative.application.ExpectedRevision;
 import com.leori.enia.initiative.application.RejectAIInitiativeUseCase;
 import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.AIInitiativeId;
@@ -92,7 +93,8 @@ class AIInitiativeGetIntegrationTest {
                 "Rejected initiative", "Persisted explanation", InitiativeStatus.RISK_ASSESSED,
                 RiskLevel.HIGH, false, false, CREATED_AT, null);
         repository.create(initiative);
-        reject.execute(new RejectAIInitiativeCommand(initiative.id(), "  Residual risk unacceptable  "));
+        reject.execute(new RejectAIInitiativeCommand(initiative.id(), "  Residual risk unacceptable  ",
+                new ExpectedRevision(initiative.id(), 0)));
 
         mvc.perform(get("/api/v1/ai-initiatives/{id}", initiative.id().value()))
                 .andExpect(status().isOk())
