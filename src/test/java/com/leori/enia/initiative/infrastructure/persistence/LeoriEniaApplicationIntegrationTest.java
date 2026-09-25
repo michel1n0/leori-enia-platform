@@ -94,7 +94,7 @@ class LeoriEniaApplicationIntegrationTest {
         assertNotNull(dataSource);
         assertNotNull(transactionManager);
         assertNotNull(clock);
-        assertEquals("2", flyway.info().current().getVersion().toString());
+        assertEquals("3", flyway.info().current().getVersion().toString());
         assertTrue(AopUtils.isAopProxy(create));
 
         AIInitiative created = create.execute(new CreateAIInitiativeCommand(

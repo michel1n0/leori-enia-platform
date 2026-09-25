@@ -1,10 +1,13 @@
 package com.leori.enia.initiative.domain;
 
 import com.leori.enia.initiative.domain.event.AIInitiativeApproved;
+import com.leori.enia.initiative.domain.event.AIInitiativeRejected;
 import com.leori.enia.organization.domain.OrganizationId;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Instant;
 
@@ -181,7 +184,7 @@ class AIInitiativeTest {
                 RiskLevel.MEDIUM,
                 true,
                 false,
-                NOW
+                NOW, null
         );
 
         assertAll(
@@ -278,7 +281,7 @@ class AIInitiativeTest {
                                 RiskLevel.NOT_ASSESSED,
                                 true,
                                 false,
-                                NOW
+                                NOW, null
                         )
                 ),
                 () -> assertThrows(
@@ -292,7 +295,7 @@ class AIInitiativeTest {
                                 RiskLevel.NOT_ASSESSED,
                                 true,
                                 false,
-                                NOW
+                                NOW, null
                         )
                 ),
                 () -> assertThrows(
@@ -306,7 +309,7 @@ class AIInitiativeTest {
                                 RiskLevel.NOT_ASSESSED,
                                 true,
                                 false,
-                                NOW
+                                NOW, null
                         )
                 ),
                 () -> assertThrows(
@@ -320,7 +323,7 @@ class AIInitiativeTest {
                                 RiskLevel.NOT_ASSESSED,
                                 true,
                                 false,
-                                NOW
+                                NOW, null
                         )
                 ),
                 () -> assertThrows(
@@ -334,7 +337,7 @@ class AIInitiativeTest {
                                 RiskLevel.NOT_ASSESSED,
                                 true,
                                 false,
-                                NOW
+                                NOW, null
                         )
                 ),
                 () -> assertThrows(
@@ -348,7 +351,7 @@ class AIInitiativeTest {
                                 null,
                                 true,
                                 false,
-                                NOW
+                                NOW, null
                         )
                 ),
                 () -> assertThrows(
@@ -362,7 +365,7 @@ class AIInitiativeTest {
                                 RiskLevel.NOT_ASSESSED,
                                 true,
                                 false,
-                                null
+                                null, null
                         )
                 )
         );
@@ -376,6 +379,146 @@ class AIInitiativeTest {
 
         assertEquals(InitiativeStatus.DRAFT, initiative.status());
         assertTrue(initiative.domainEvents().isEmpty());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = RiskLevel.class, names = {"LOW", "MEDIUM", "HIGH"})
+    void rejection_stores_the_same_normalized_reason_as_its_event(RiskLevel risk) {
+        AIInitiative initiative = createInitiative();
+        initiative.submit(NOW);
+        initiative.startAssessment();
+        initiative.assessRisk(risk, NOW);
+        var eventsBefore = initiative.domainEvents();
+        Instant rejectedAt = NOW.plusSeconds(60);
+
+        initiative.reject("  Residual risk unacceptable \t", rejectedAt);
+
+        assertEquals(InitiativeStatus.REJECTED, initiative.status());
+        assertEquals(risk, initiative.preliminaryRisk());
+        assertEquals("Residual risk unacceptable", initiative.rejectionReason());
+        assertEquals(eventsBefore.size() + 1, initiative.domainEvents().size());
+        assertEquals(eventsBefore, initiative.domainEvents().subList(0, eventsBefore.size()));
+        AIInitiativeRejected event = assertInstanceOf(AIInitiativeRejected.class, initiative.domainEvents().getLast());
+        assertEquals(initiative.id(), event.initiativeId());
+        assertSame(initiative.rejectionReason(), event.reason());
+        assertEquals(rejectedAt, event.occurredAt());
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"   ", "\t\n", "\u0000", "\u2003"})
+    void invalid_rejection_reason_preserves_all_state_and_pending_events(String reason) {
+        AIInitiative initiative = createInitiative();
+        initiative.submit(NOW);
+        initiative.startAssessment();
+        initiative.assessRisk(RiskLevel.HIGH, NOW);
+        var eventsBefore = initiative.domainEvents();
+
+        assertThrows(IllegalArgumentException.class, () -> initiative.reject(reason, NOW));
+
+        assertEquals(InitiativeStatus.RISK_ASSESSED, initiative.status());
+        assertEquals(RiskLevel.HIGH, initiative.preliminaryRisk());
+        assertNull(initiative.rejectionReason());
+        assertEquals(eventsBefore, initiative.domainEvents());
+    }
+
+    @Test
+    void null_rejection_time_preserves_all_state_and_pending_events() {
+        AIInitiative initiative = createInitiative();
+        initiative.submit(NOW);
+        initiative.startAssessment();
+        initiative.assessRisk(RiskLevel.HIGH, NOW);
+        var eventsBefore = initiative.domainEvents();
+
+        assertThrows(NullPointerException.class, () -> initiative.reject("Reason", null));
+
+        assertEquals(InitiativeStatus.RISK_ASSESSED, initiative.status());
+        assertEquals(RiskLevel.HIGH, initiative.preliminaryRisk());
+        assertNull(initiative.rejectionReason());
+        assertEquals(eventsBefore, initiative.domainEvents());
+    }
+
+    @Test
+    void wrong_state_rejection_preserves_pending_events() {
+        AIInitiative initiative = createInitiative();
+        initiative.submit(NOW);
+        var eventsBefore = initiative.domainEvents();
+
+        assertThrows(IllegalStateException.class, () -> initiative.reject("Reason", NOW));
+
+        assertEquals(InitiativeStatus.SUBMITTED, initiative.status());
+        assertEquals(RiskLevel.NOT_ASSESSED, initiative.preliminaryRisk());
+        assertNull(initiative.rejectionReason());
+        assertEquals(eventsBefore, initiative.domainEvents());
+    }
+
+    @Test
+    void repeated_rejection_preserves_the_original_reason_and_events() {
+        AIInitiative initiative = rehydrate(InitiativeStatus.RISK_ASSESSED, RiskLevel.HIGH);
+        initiative.reject("Original reason", NOW);
+        var eventsBefore = initiative.domainEvents();
+
+        assertThrows(IllegalStateException.class, () -> initiative.reject("Replacement reason", NOW.plusSeconds(1)));
+
+        assertEquals(InitiativeStatus.REJECTED, initiative.status());
+        assertEquals(RiskLevel.HIGH, initiative.preliminaryRisk());
+        assertEquals("Original reason", initiative.rejectionReason());
+        assertEquals(eventsBefore, initiative.domainEvents());
+    }
+
+    @Test
+    void creation_and_non_rejected_transitions_have_no_rejection_reason() {
+        AIInitiative initiative = createInitiative();
+        assertNull(initiative.rejectionReason());
+        initiative.submit(NOW);
+        assertNull(initiative.rejectionReason());
+        initiative.startAssessment();
+        assertNull(initiative.rejectionReason());
+        initiative.assessRisk(RiskLevel.HIGH, NOW);
+        assertNull(initiative.rejectionReason());
+        initiative.approve(NOW);
+        assertNull(initiative.rejectionReason());
+        assertEquals(InitiativeStatus.APPROVED, initiative.status());
+        assertEquals(RiskLevel.HIGH, initiative.preliminaryRisk());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = RiskLevel.class, names = {"LOW", "MEDIUM", "HIGH"})
+    void rehydrates_rejected_reason_or_unavailable_legacy_reason_without_events(RiskLevel risk) {
+        AIInitiative rejected = AIInitiative.rehydrate(INITIATIVE_ID, ORGANIZATION_ID,
+                "Name", "Description", InitiativeStatus.REJECTED, risk, true, false, NOW, "  reason  ");
+        assertEquals("reason", rejected.rejectionReason());
+        assertEquals(InitiativeStatus.REJECTED, rejected.status());
+        assertEquals(risk, rejected.preliminaryRisk());
+        assertTrue(rejected.domainEvents().isEmpty());
+
+        AIInitiative legacy = rehydrate(InitiativeStatus.REJECTED, risk);
+        assertNull(legacy.rejectionReason());
+        assertEquals(InitiativeStatus.REJECTED, legacy.status());
+        assertEquals(risk, legacy.preliminaryRisk());
+        assertTrue(legacy.domainEvents().isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "   ", "\t\n", "\u0000", "\u2003"})
+    void rehydration_rejects_blank_reasons(String reason) {
+        assertThrows(IllegalArgumentException.class, () -> AIInitiative.rehydrate(
+                INITIATIVE_ID, ORGANIZATION_ID, "Name", "Description", InitiativeStatus.REJECTED,
+                RiskLevel.HIGH, true, false, NOW, reason));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = InitiativeStatus.class,
+            names = {"DRAFT", "SUBMITTED", "UNDER_ASSESSMENT", "RISK_ASSESSED", "APPROVED"})
+    void rehydration_requires_null_reason_for_non_rejected_states(InitiativeStatus status) {
+        RiskLevel risk = status == InitiativeStatus.RISK_ASSESSED || status == InitiativeStatus.APPROVED
+                ? RiskLevel.HIGH : RiskLevel.NOT_ASSESSED;
+        assertNull(rehydrate(status, risk).rejectionReason());
+        for (String reason : new String[]{"Reason", "", "   "}) {
+            assertThrows(IllegalArgumentException.class, () -> AIInitiative.rehydrate(
+                    INITIATIVE_ID, ORGANIZATION_ID, "Name", "Description", status,
+                    risk, true, false, NOW, reason));
+        }
     }
 
     private AIInitiative createInitiative() {
@@ -406,7 +549,7 @@ class AIInitiativeTest {
                 preliminaryRisk,
                 true,
                 false,
-                NOW
+                NOW, null
         );
     }
 }

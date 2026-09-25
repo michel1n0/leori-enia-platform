@@ -54,12 +54,16 @@ class AIInitiativeApproveIntegrationTest {
         String submittedTag = mvc.perform(post(path + "/submit").header("If-Match", initialTag))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"))
+                .andExpect(jsonPath("$.rejectionReason").hasJsonPath())
+                .andExpect(jsonPath("$.rejectionReason").value(org.hamcrest.Matchers.nullValue()))
                 .andReturn().getResponse().getHeader("ETag");
         assertEquals(tag(id, 1), submittedTag);
 
         String assessmentTag = mvc.perform(post(path + "/assessment/start").header("If-Match", submittedTag))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UNDER_ASSESSMENT"))
+                .andExpect(jsonPath("$.rejectionReason").hasJsonPath())
+                .andExpect(jsonPath("$.rejectionReason").value(org.hamcrest.Matchers.nullValue()))
                 .andReturn().getResponse().getHeader("ETag");
         assertEquals(tag(id, 2), assessmentTag);
 
@@ -67,12 +71,16 @@ class AIInitiativeApproveIntegrationTest {
                         .contentType("application/json").content("{\"riskLevel\":\"HIGH\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("RISK_ASSESSED"))
+                .andExpect(jsonPath("$.rejectionReason").hasJsonPath())
+                .andExpect(jsonPath("$.rejectionReason").value(org.hamcrest.Matchers.nullValue()))
                 .andReturn().getResponse().getHeader("ETag");
         assertEquals(tag(id, 3), preApprovalTag);
 
         var approval = mvc.perform(post(path + "/approve").header("If-Match", preApprovalTag))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"))
+                .andExpect(jsonPath("$.rejectionReason").hasJsonPath())
+                .andExpect(jsonPath("$.rejectionReason").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.preliminaryRisk").value("HIGH"))
                 .andExpect(jsonPath("$.version").doesNotExist())
                 .andExpect(jsonPath("$.revision").doesNotExist())
@@ -83,7 +91,7 @@ class AIInitiativeApproveIntegrationTest {
         assertNotEquals(preApprovalTag, approvedTag);
         assertEquals(tag(id, 4), approvedTag);
         JsonNode approved = json.readTree(approval.getResponse().getContentAsString());
-        assertEquals(9, approved.size());
+        assertEquals(10, approved.size());
         var afterGet = mvc.perform(get(path)).andExpect(status().isOk()).andReturn();
         assertEquals(approvedTag, afterGet.getResponse().getHeader("ETag"));
         assertEquals(approved, json.readTree(afterGet.getResponse().getContentAsString()));
@@ -151,6 +159,8 @@ class AIInitiativeApproveIntegrationTest {
                                 """.formatted(UUID.randomUUID())))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.rejectionReason").hasJsonPath())
+                .andExpect(jsonPath("$.rejectionReason").value(org.hamcrest.Matchers.nullValue()))
                 .andReturn();
         String location = created.getResponse().getHeader("Location");
         assertNotNull(location);

@@ -45,7 +45,7 @@ class RevisionValuesTest {
     @Test
     void versioned_details_carries_revision_and_rejects_negative_values() {
         AIInitiativeDetails details = new AIInitiativeDetails(null, null, "name", "description",
-                null, null, false, false, null);
+                null, null, false, false, null, null);
         assertEquals(details, new VersionedAIInitiativeDetails(details, 0).details());
         assertEquals(4, new VersionedAIInitiativeDetails(details, 4).revision());
         assertThrows(IllegalArgumentException.class, () -> new VersionedAIInitiativeDetails(details, -1));

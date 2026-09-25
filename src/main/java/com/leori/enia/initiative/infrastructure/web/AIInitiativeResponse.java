@@ -17,7 +17,8 @@ public record AIInitiativeResponse(
         RiskLevel preliminaryRisk,
         boolean usesPersonalData,
         boolean impactsRights,
-        Instant createdAt
+        Instant createdAt,
+        String rejectionReason
 ) {
     static AIInitiativeResponse from(AIInitiative initiative) {
         return new AIInitiativeResponse(
@@ -29,7 +30,8 @@ public record AIInitiativeResponse(
                 initiative.preliminaryRisk(),
                 initiative.usesPersonalData(),
                 initiative.impactsRights(),
-                initiative.createdAt()
+                initiative.createdAt(),
+                initiative.rejectionReason()
         );
     }
 
@@ -43,7 +45,8 @@ public record AIInitiativeResponse(
                 details.preliminaryRisk(),
                 details.usesPersonalData(),
                 details.impactsRights(),
-                details.createdAt()
+                details.createdAt(),
+                details.rejectionReason()
         );
     }
 }

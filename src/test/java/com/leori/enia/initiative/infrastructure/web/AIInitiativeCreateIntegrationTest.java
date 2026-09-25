@@ -80,7 +80,9 @@ class AIInitiativeCreateIntegrationTest {
         String location = "/api/v1/ai-initiatives/" + id;
 
         assertEquals(location, postResult.getResponse().getHeader("Location"));
-        assertEquals(9, body.size());
+        assertEquals(10, body.size());
+        assertTrue(body.has("rejectionReason"));
+        assertTrue(body.get("rejectionReason").isNull());
         assertEquals(request.get("organizationId"), body.get("organizationId").asText());
         assertEquals("New initiative", body.get("name").asText());
         assertEquals("Description", body.get("description").asText());
@@ -176,7 +178,7 @@ class AIInitiativeCreateIntegrationTest {
 
     static Stream<String> internalFields() {
         return Stream.of("id", "status", "preliminaryRisk", "createdAt",
-                "version", "revision", "domainEvents");
+                "version", "revision", "domainEvents", "rejectionReason");
     }
 
     @Test

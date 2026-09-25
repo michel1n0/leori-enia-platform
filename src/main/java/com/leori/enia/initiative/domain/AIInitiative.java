@@ -23,6 +23,7 @@ import com.leori.enia.initiative.domain.event.AIInitiativeRejected;
 
       private InitiativeStatus status;
       private RiskLevel preliminaryRisk;
+      private String rejectionReason;
 
       private final boolean usesPersonalData;
       private final boolean impactsRights;
@@ -57,6 +58,11 @@ import com.leori.enia.initiative.domain.event.AIInitiativeRejected;
           return new Builder();
       }
 
+      /**
+       * Restores persisted state without events. A REJECTED initiative with a
+       * null reason represents a historical rejection whose explanation was
+       * not stored; new rejections must always supply a valid reason.
+       */
       public static AIInitiative rehydrate(
               AIInitiativeId id,
               OrganizationId organizationId,
@@ -66,9 +72,15 @@ import com.leori.enia.initiative.domain.event.AIInitiativeRejected;
               RiskLevel preliminaryRisk,
               boolean usesPersonalData,
               boolean impactsRights,
-              Instant createdAt
+              Instant createdAt,
+              String rejectionReason
       ) {
           validateRestoredLifecycle(status, preliminaryRisk);
+          if (status != InitiativeStatus.REJECTED && rejectionReason != null) {
+              throw new IllegalArgumentException("Rejection reason requires REJECTED status");
+          }
+          String restoredReason = rejectionReason == null
+                  ? null : normalizeRejectionReason(rejectionReason);
 
           AIInitiative initiative = builder()
                   .id(id)
@@ -82,6 +94,7 @@ import com.leori.enia.initiative.domain.event.AIInitiativeRejected;
 
           initiative.status = status;
           initiative.preliminaryRisk = preliminaryRisk;
+          initiative.rejectionReason = restoredReason;
 
           return initiative;
       }
@@ -196,6 +209,10 @@ import com.leori.enia.initiative.domain.event.AIInitiativeRejected;
           return preliminaryRisk;
       }
 
+      public String rejectionReason() {
+          return rejectionReason;
+      }
+
       public boolean usesPersonalData() {
           return usesPersonalData;
       }
@@ -283,15 +300,24 @@ import com.leori.enia.initiative.domain.event.AIInitiativeRejected;
 
     public void reject(String reason, Instant occurredAt) {
         requireStatus(InitiativeStatus.RISK_ASSESSED);
-        
-        if(reason == null || reason.isBlank()) {
-            throw new IllegalArgumentException("Rejection reason is required");
-        }
-
+        String normalizedReason = normalizeRejectionReason(reason);
         Objects.requireNonNull(occurredAt, "OccurredAt is required");
+        AIInitiativeRejected event = new AIInitiativeRejected(id, normalizedReason, occurredAt);
 
+        rejectionReason = normalizedReason;
         status = InitiativeStatus.REJECTED;
 
-        registerEvent(new AIInitiativeRejected(id, reason.trim(), occurredAt));
+        registerEvent(event);
+  }
+
+    private static String normalizeRejectionReason(String reason) {
+        if (reason == null) {
+            throw new IllegalArgumentException("Rejection reason is required");
+        }
+        String normalizedReason = reason.trim();
+        if (normalizedReason.isBlank()) {
+            throw new IllegalArgumentException("Rejection reason is required");
+        }
+        return normalizedReason;
   }
 }

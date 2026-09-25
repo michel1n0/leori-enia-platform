@@ -33,6 +33,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 @Testcontainers
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
@@ -80,7 +81,7 @@ class PostgreSQLAIInitiativePersistenceIntegrationTest {
     @Test
     void should_apply_v1_with_postgresql_native_types() {
         assertEquals("1", flyway.info().applied()[0].getVersion().toString());
-        assertEquals("2", flyway.info().current().getVersion().toString());
+        assertEquals("3", flyway.info().current().getVersion().toString());
 
         Integer tableCount = jdbcTemplate.queryForObject(
                 """
@@ -113,6 +114,7 @@ class PostgreSQLAIInitiativePersistenceIntegrationTest {
         );
 
         assertEquals("bigint", columnTypes.get("version"));
+        assertEquals("text", columnTypes.get("rejection_reason"));
         assertEquals("uuid", columnTypes.get("id"));
         assertEquals("uuid", columnTypes.get("organization_id"));
         assertEquals("character varying", columnTypes.get("status"));
@@ -203,6 +205,40 @@ class PostgreSQLAIInitiativePersistenceIntegrationTest {
         assertEquals(1, rowCount);
     }
 
+    @Test
+    void should_save_and_reload_rejection_reason_without_pending_events() {
+        AIInitiative initial = adapter.create(createRiskAssessedInitiative());
+        flushAndClear();
+        LoadedAIInitiative loaded = adapter.findById(initial.id()).orElseThrow();
+        assertEquals(0, loaded.version());
+        loaded.initiative().reject("  Residual risk unacceptable  ", ASSESSED_AT.plusSeconds(1));
+        loaded.initiative().clearDomainEvents();
+
+        var saved = adapter.save(loaded);
+        flushAndClear();
+        var reloaded = adapter.findById(initial.id()).orElseThrow();
+
+        assertEquals(1, saved.version());
+        assertEquals(saved.version(), reloaded.version());
+        assertEquals(InitiativeStatus.REJECTED, reloaded.initiative().status());
+        assertEquals(RiskLevel.MEDIUM, reloaded.initiative().preliminaryRisk());
+        assertEquals("Residual risk unacceptable", saved.initiative().rejectionReason());
+        assertEquals(saved.initiative().rejectionReason(), reloaded.initiative().rejectionReason());
+        assertTrue(reloaded.initiative().domainEvents().isEmpty());
+    }
+
+    @Test
+    void should_reload_approved_state_without_rejection_reason() {
+        AIInitiative initial = createRiskAssessedInitiative();
+        initial.approve(ASSESSED_AT.plusSeconds(1));
+        adapter.create(initial);
+        flushAndClear();
+
+        AIInitiative loaded = adapter.findById(initial.id()).orElseThrow().initiative();
+        assertEquals(InitiativeStatus.APPROVED, loaded.status());
+        assertNull(loaded.rejectionReason());
+    }
+
     private AIInitiative createRiskAssessedInitiative() {
         AIInitiative initiative = createInitiative();
         initiative.submit(SUBMITTED_AT);
@@ -238,6 +274,7 @@ class PostgreSQLAIInitiativePersistenceIntegrationTest {
         assertEquals(expected.description(), actual.description());
         assertEquals(expected.status(), actual.status());
         assertEquals(expected.preliminaryRisk(), actual.preliminaryRisk());
+        assertEquals(expected.rejectionReason(), actual.rejectionReason());
         assertEquals(expected.usesPersonalData(), actual.usesPersonalData());
         assertEquals(expected.impactsRights(), actual.impactsRights());
         assertEquals(expected.createdAt(), actual.createdAt());

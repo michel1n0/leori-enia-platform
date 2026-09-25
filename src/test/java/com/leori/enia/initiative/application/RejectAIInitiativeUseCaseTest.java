@@ -55,6 +55,8 @@ class RejectAIInitiativeUseCaseTest {
         );
 
         assertEquals(InitiativeStatus.REJECTED, initiative.status());
+        assertEquals("Riesgo residual no aceptable", result.rejectionReason());
+        assertEquals(result.rejectionReason(), repository.savedInitiative().rejectionReason());
         assertEquals(1, repository.saveCount());
         assertSame(initiative, repository.savedInitiative());
         assertSame(initiative, result);

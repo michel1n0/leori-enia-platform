@@ -10,6 +10,9 @@ import com.leori.enia.initiative.domain.InitiativeStatus;
 import com.leori.enia.initiative.domain.RiskLevel;
 import com.leori.enia.organization.domain.OrganizationId;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.lang.reflect.RecordComponent;
 import java.time.Instant;
@@ -52,6 +55,7 @@ class GetAIInitiativeUseCaseTest {
         assertEquals(true, details.usesPersonalData());
         assertEquals(false, details.impactsRights());
         assertEquals(CREATED_AT, details.createdAt());
+        org.junit.jupiter.api.Assertions.assertNull(details.rejectionReason());
     }
 
     @Test
@@ -69,7 +73,23 @@ class GetAIInitiativeUseCaseTest {
                 .collect(Collectors.toSet());
 
         assertEquals(Set.of("id", "organizationId", "name", "description", "status",
-                "preliminaryRisk", "usesPersonalData", "impactsRights", "createdAt"), fields);
+                "preliminaryRisk", "usesPersonalData", "impactsRights", "createdAt", "rejectionReason"), fields);
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"  Stored reason  "})
+    void returns_rehydrated_rejection_reason_including_legacy_null(String reason) {
+        AIInitiative initiative = AIInitiative.rehydrate(AIInitiativeId.generate(), OrganizationId.generate(),
+                "Name", "Description", InitiativeStatus.REJECTED, RiskLevel.HIGH,
+                false, false, CREATED_AT, reason);
+        var useCase = new GetAIInitiativeUseCase(repository(Optional.of(new LoadedAIInitiative(initiative, 42))));
+
+        var result = useCase.execute(initiative.id());
+
+        assertEquals(InitiativeStatus.REJECTED, result.details().status());
+        assertEquals(reason == null ? null : "Stored reason", result.details().rejectionReason());
+        assertEquals(42, result.revision());
     }
 
     private static AIInitiativeRepository repository(Optional<LoadedAIInitiative> loaded) {

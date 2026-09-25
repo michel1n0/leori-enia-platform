@@ -20,7 +20,8 @@ class AIInitiativePersistenceMapper {
                 initiative.usesPersonalData(),
                 initiative.impactsRights(),
                 initiative.createdAt(),
-                version
+                version,
+                initiative.rejectionReason()
         );
     }
 
@@ -38,7 +39,8 @@ class AIInitiativePersistenceMapper {
                 entity.preliminaryRisk(),
                 entity.usesPersonalData(),
                 entity.impactsRights(),
-                entity.createdAt()
+                entity.createdAt(),
+                entity.rejectionReason()
         );
     }
 }

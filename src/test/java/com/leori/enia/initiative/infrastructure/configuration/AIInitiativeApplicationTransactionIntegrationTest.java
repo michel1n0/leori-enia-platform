@@ -155,6 +155,12 @@ class AIInitiativeApplicationTransactionIntegrationTest {
             case ASSESS_RISK, APPROVE, REJECT -> RiskLevel.HIGH;
         };
         assertEquals(expectedRisk, result.preliminaryRisk());
+        String expectedReason = operation == Operation.REJECT ? "Residual risk unacceptable" : null;
+        assertEquals(expectedReason, result.rejectionReason());
+        assertEquals(expectedReason, jdbc.queryForObject(
+                "select rejection_reason from ai_initiatives where id = ?", String.class, result.id().value()));
+        assertEquals(expectedReason, repository.delegate.findById(result.id()).orElseThrow()
+                .initiative().rejectionReason());
         assertSingleTransaction(operation);
     }
 
@@ -169,12 +175,17 @@ class AIInitiativeApplicationTransactionIntegrationTest {
         assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
         assertSingleTransaction(operation);
         assertEquals(operation.resultStatus.name(), repository.flushedStatus);
+        if (operation == Operation.REJECT) {
+            assertEquals("Residual risk unacceptable", repository.flushedReason);
+        }
         if (before == null) {
             assertEquals(0, jdbc.queryForObject(
                     "select count(*) from ai_initiatives where id = ?",
                     Integer.class, repository.savedId.value()));
         } else {
             assertEquals(before.status().name(), storedStatus(before.id()));
+            assertEquals(before.rejectionReason(), jdbc.queryForObject(
+                    "select rejection_reason from ai_initiatives where id = ?", String.class, before.id().value()));
             assertEquals(before.preliminaryRisk().name(), jdbc.queryForObject(
                     "select preliminary_risk from ai_initiatives where id = ?",
                     String.class, before.id().value()));
@@ -294,6 +305,7 @@ class AIInitiativeApplicationTransactionIntegrationTest {
         private Long saveTransaction;
         private AIInitiativeId savedId;
         private String flushedStatus;
+        private String flushedReason;
         private int loads;
         private int saves;
 
@@ -326,6 +338,8 @@ class AIInitiativeApplicationTransactionIntegrationTest {
             SavedAIInitiative result = delegate.save(loaded);
             entityManager.flush();
             savedId = result.initiative().id();
+            flushedReason = jdbc.queryForObject(
+                    "select rejection_reason from ai_initiatives where id = ?", String.class, savedId.value());
             flushedStatus = jdbc.queryForObject(
                     "select status from ai_initiatives where id = ?", String.class, savedId.value());
             assertEquals(loaded.initiative().status().name(), flushedStatus);
@@ -363,6 +377,7 @@ class AIInitiativeApplicationTransactionIntegrationTest {
             saveTransaction = null;
             savedId = null;
             flushedStatus = null;
+            flushedReason = null;
             loads = 0;
             saves = 0;
         }

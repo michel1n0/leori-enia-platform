@@ -17,13 +17,15 @@ public record AIInitiativeDetails(
         RiskLevel preliminaryRisk,
         boolean usesPersonalData,
         boolean impactsRights,
-        Instant createdAt
+        Instant createdAt,
+        String rejectionReason
 ) {
     public static AIInitiativeDetails from(AIInitiative initiative) {
         return new AIInitiativeDetails(
                 initiative.id(), initiative.organizationId(), initiative.name(),
                 initiative.description(), initiative.status(), initiative.preliminaryRisk(),
-                initiative.usesPersonalData(), initiative.impactsRights(), initiative.createdAt()
+                initiative.usesPersonalData(), initiative.impactsRights(), initiative.createdAt(),
+                initiative.rejectionReason()
         );
     }
 }

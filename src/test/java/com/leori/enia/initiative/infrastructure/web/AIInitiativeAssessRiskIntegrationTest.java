@@ -63,11 +63,15 @@ class AIInitiativeAssessRiskIntegrationTest {
         String submittedTag = mvc.perform(post(path + "/submit").header("If-Match", initialTag))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"))
+                .andExpect(jsonPath("$.rejectionReason").hasJsonPath())
+                .andExpect(jsonPath("$.rejectionReason").value(org.hamcrest.Matchers.nullValue()))
                 .andReturn().getResponse().getHeader("ETag");
         assertEquals(tag(initiative.id(), 1), submittedTag);
         String preRiskTag = mvc.perform(post(path + "/assessment/start").header("If-Match", submittedTag))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UNDER_ASSESSMENT"))
+                .andExpect(jsonPath("$.rejectionReason").hasJsonPath())
+                .andExpect(jsonPath("$.rejectionReason").value(org.hamcrest.Matchers.nullValue()))
                 .andReturn().getResponse().getHeader("ETag");
         assertEquals(tag(initiative.id(), 2), preRiskTag);
 
@@ -76,6 +80,8 @@ class AIInitiativeAssessRiskIntegrationTest {
                         .contentType("application/json").content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("RISK_ASSESSED"))
+                .andExpect(jsonPath("$.rejectionReason").hasJsonPath())
+                .andExpect(jsonPath("$.rejectionReason").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.preliminaryRisk").value(risk.name()))
                 .andExpect(jsonPath("$.version").doesNotExist())
                 .andExpect(jsonPath("$.revision").doesNotExist())
@@ -87,7 +93,7 @@ class AIInitiativeAssessRiskIntegrationTest {
         assertEquals(tag(initiative.id(), 3), newTag);
         assertEquals(3, repository.findById(initiative.id()).orElseThrow().version());
         JsonNode assessed = json.readTree(assessment.getResponse().getContentAsString());
-        assertEquals(9, assessed.size());
+        assertEquals(10, assessed.size());
         var afterGet = mvc.perform(get(path)).andExpect(status().isOk()).andReturn();
         assertEquals(newTag, afterGet.getResponse().getHeader("ETag"));
         assertEquals(assessed, json.readTree(afterGet.getResponse().getContentAsString()));
@@ -136,6 +142,8 @@ class AIInitiativeAssessRiskIntegrationTest {
                 .andExpect(jsonPath("$.code").value("INVALID_INITIATIVE_ID"));
         var afterFailures = mvc.perform(get(path)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.rejectionReason").hasJsonPath())
+                .andExpect(jsonPath("$.rejectionReason").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.preliminaryRisk").value("NOT_ASSESSED")).andReturn();
         assertEquals(tag(initiative.id(), 0), afterFailures.getResponse().getHeader("ETag"));
     }

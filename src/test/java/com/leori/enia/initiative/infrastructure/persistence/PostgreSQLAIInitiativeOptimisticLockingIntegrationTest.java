@@ -327,7 +327,7 @@ class PostgreSQLAIInitiativeOptimisticLockingIntegrationTest {
 
         var migration = Flyway.configure()
                 .dataSource(POSTGRESQL.getJdbcUrl(), POSTGRESQL.getUsername(), POSTGRESQL.getPassword())
-                .schemas("upgrade_test").defaultSchema("upgrade_test").load().migrate();
+                .schemas("upgrade_test").defaultSchema("upgrade_test").target("2").load().migrate();
 
         assertEquals(1, migration.migrationsExecuted);
         Map<String, Object> after = new HashMap<>(jdbc.queryForMap("select * from upgrade_test.ai_initiatives"));
@@ -343,6 +343,9 @@ class PostgreSQLAIInitiativeOptimisticLockingIntegrationTest {
         assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
         LoadedAIInitiative stored = load(id);
         assertEquals(InitiativeStatus.APPROVED, stored.initiative().status());
+        org.junit.jupiter.api.Assertions.assertNull(stored.initiative().rejectionReason());
+        org.junit.jupiter.api.Assertions.assertNull(jdbc.queryForObject(
+                "select rejection_reason from ai_initiatives where id = ?", String.class, id.value()));
         assertEquals(RiskLevel.HIGH, stored.initiative().preliminaryRisk());
         assertEquals(version, stored.version());
         assertEquals("APPROVED", jdbc.queryForObject(

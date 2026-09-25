@@ -55,11 +55,13 @@ class AIInitiativeSubmitIntegrationTest {
         var initialGet = mvc.perform(get(path)).andExpect(status().isOk()).andReturn();
         String originalTag = initialGet.getResponse().getHeader("ETag");
         assertNotNull(originalTag);
-        assertEquals(9, json.readTree(initialGet.getResponse().getContentAsString()).size());
+        assertEquals(10, json.readTree(initialGet.getResponse().getContentAsString()).size());
 
         var submit = mvc.perform(post(path + "/submit").header("If-Match", originalTag))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"))
+                .andExpect(jsonPath("$.rejectionReason").hasJsonPath())
+                .andExpect(jsonPath("$.rejectionReason").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.version").doesNotExist())
                 .andExpect(jsonPath("$.revision").doesNotExist())
                 .andExpect(jsonPath("$.domainEvents").doesNotExist())

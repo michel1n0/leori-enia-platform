@@ -42,6 +42,9 @@ class AIInitiativeJpaEntity {
     @Column(name = "preliminary_risk", nullable = false, length = 32)
     private RiskLevel preliminaryRisk;
 
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
+
     @Column(name = "uses_personal_data", nullable = false)
     private boolean usesPersonalData;
 
@@ -64,7 +67,8 @@ class AIInitiativeJpaEntity {
             boolean usesPersonalData,
             boolean impactsRights,
             Instant createdAt,
-            Long version
+            Long version,
+            String rejectionReason
     ) {
         this.id = id;
         this.organizationId = organizationId;
@@ -76,6 +80,7 @@ class AIInitiativeJpaEntity {
         this.impactsRights = impactsRights;
         this.createdAt = createdAt;
         this.version = version;
+        this.rejectionReason = rejectionReason;
     }
 
     UUID id() {
@@ -104,6 +109,10 @@ class AIInitiativeJpaEntity {
 
     RiskLevel preliminaryRisk() {
         return preliminaryRisk;
+    }
+
+    String rejectionReason() {
+        return rejectionReason;
     }
 
     boolean usesPersonalData() {

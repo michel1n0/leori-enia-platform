@@ -2,8 +2,12 @@ package com.leori.enia.initiative.infrastructure.web;
 
 import com.leori.enia.LeoriEniaApplication;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
+import com.leori.enia.initiative.application.RejectAIInitiativeCommand;
+import com.leori.enia.initiative.application.RejectAIInitiativeUseCase;
 import com.leori.enia.initiative.domain.AIInitiative;
 import com.leori.enia.initiative.domain.AIInitiativeId;
+import com.leori.enia.initiative.domain.InitiativeStatus;
+import com.leori.enia.initiative.domain.RiskLevel;
 import com.leori.enia.organization.domain.OrganizationId;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,6 +51,9 @@ class AIInitiativeGetIntegrationTest {
     @Autowired
     private AIInitiativeRepository repository;
 
+    @Autowired
+    private RejectAIInitiativeUseCase reject;
+
     @Test
     void get_existing_initiative_returns_only_public_state() throws Exception {
         AIInitiative initiative = AIInitiative.builder()
@@ -67,6 +74,8 @@ class AIInitiativeGetIntegrationTest {
                 .andExpect(jsonPath("$.name").value("HTTP read"))
                 .andExpect(jsonPath("$.description").value("Stored in PostgreSQL"))
                 .andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.rejectionReason").hasJsonPath())
+                .andExpect(jsonPath("$.rejectionReason").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.preliminaryRisk").value("NOT_ASSESSED"))
                 .andExpect(jsonPath("$.usesPersonalData").value(true))
                 .andExpect(jsonPath("$.impactsRights").value(false))
@@ -75,6 +84,41 @@ class AIInitiativeGetIntegrationTest {
                 .andExpect(jsonPath("$.version").doesNotExist())
                 .andExpect(jsonPath("$.initiative").doesNotExist())
                 .andExpect(header().string("ETag", "\"ai-initiative:" + initiative.id().value() + ":0\""));
+    }
+
+    @Test
+    void get_returns_the_durable_reason_after_rejection_commits() throws Exception {
+        AIInitiative initiative = AIInitiative.rehydrate(AIInitiativeId.generate(), OrganizationId.generate(),
+                "Rejected initiative", "Persisted explanation", InitiativeStatus.RISK_ASSESSED,
+                RiskLevel.HIGH, false, false, CREATED_AT, null);
+        repository.create(initiative);
+        reject.execute(new RejectAIInitiativeCommand(initiative.id(), "  Residual risk unacceptable  "));
+
+        mvc.perform(get("/api/v1/ai-initiatives/{id}", initiative.id().value()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
+                .andExpect(jsonPath("$.rejectionReason").value("Residual risk unacceptable"))
+                .andExpect(jsonPath("$.revision").doesNotExist())
+                .andExpect(jsonPath("$.version").doesNotExist())
+                .andExpect(jsonPath("$.domainEvents").doesNotExist())
+                .andExpect(header().string("ETag", "\"ai-initiative:" + initiative.id().value() + ":1\""));
+    }
+
+    @Test
+    void get_returns_explicit_null_for_legacy_rejection_and_approval() throws Exception {
+        for (InitiativeStatus state : new InitiativeStatus[]{InitiativeStatus.REJECTED, InitiativeStatus.APPROVED}) {
+            AIInitiative initiative = AIInitiative.rehydrate(AIInitiativeId.generate(), OrganizationId.generate(),
+                    "Historical initiative", "No stored rejection explanation", state,
+                    RiskLevel.HIGH, false, false, CREATED_AT, null);
+            repository.create(initiative);
+
+            mvc.perform(get("/api/v1/ai-initiatives/{id}", initiative.id().value()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value(state.name()))
+                    .andExpect(jsonPath("$.rejectionReason").hasJsonPath())
+                    .andExpect(jsonPath("$.rejectionReason").value(org.hamcrest.Matchers.nullValue()))
+                    .andExpect(header().string("ETag", "\"ai-initiative:" + initiative.id().value() + ":0\""));
+        }
     }
 
     @Test

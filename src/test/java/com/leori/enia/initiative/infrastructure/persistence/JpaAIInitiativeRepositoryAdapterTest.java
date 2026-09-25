@@ -26,6 +26,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
 @ContextConfiguration(
@@ -58,7 +59,7 @@ class JpaAIInitiativeRepositoryAdapterTest {
     @Test
     void should_apply_the_flyway_baseline_migration() {
         assertEquals("1", flyway.info().applied()[0].getVersion().toString());
-        assertEquals("2", flyway.info().current().getVersion().toString());
+        assertEquals("3", flyway.info().current().getVersion().toString());
 
         Set<String> columns = Set.copyOf(jdbcTemplate.queryForList(
                 """
@@ -79,7 +80,8 @@ class JpaAIInitiativeRepositoryAdapterTest {
                 "uses_personal_data",
                 "impacts_rights",
                 "created_at",
-                "version"
+                "version",
+                "rejection_reason"
         ), columns);
     }
 
@@ -140,6 +142,7 @@ class JpaAIInitiativeRepositoryAdapterTest {
 
         assertEquals(InitiativeStatus.APPROVED, saved.status());
         assertEquals(InitiativeStatus.APPROVED, loaded.status());
+        assertNull(loaded.rejectionReason());
         assertEquals(RiskLevel.HIGH, loaded.preliminaryRisk());
         assertTrue(saved.domainEvents().isEmpty());
         assertTrue(loaded.domainEvents().isEmpty());
@@ -148,7 +151,7 @@ class JpaAIInitiativeRepositoryAdapterTest {
     @Test
     void should_save_and_load_a_rejected_initiative() {
         AIInitiative initiative = createRiskAssessedInitiative();
-        initiative.reject("Riesgo residual no aceptable", DECIDED_AT);
+        initiative.reject("  Riesgo residual no aceptable  ", DECIDED_AT);
         initiative.clearDomainEvents();
 
         AIInitiative saved = adapter.create(initiative);
@@ -158,6 +161,8 @@ class JpaAIInitiativeRepositoryAdapterTest {
 
         assertEquals(InitiativeStatus.REJECTED, saved.status());
         assertEquals(InitiativeStatus.REJECTED, loaded.status());
+        assertEquals("Riesgo residual no aceptable", saved.rejectionReason());
+        assertEquals("Riesgo residual no aceptable", loaded.rejectionReason());
         assertEquals(RiskLevel.HIGH, loaded.preliminaryRisk());
         assertTrue(saved.domainEvents().isEmpty());
         assertTrue(loaded.domainEvents().isEmpty());
@@ -166,6 +171,21 @@ class JpaAIInitiativeRepositoryAdapterTest {
     @Test
     void should_return_empty_when_initiative_does_not_exist() {
         assertFalse(adapter.findById(AIInitiativeId.generate()).isPresent());
+    }
+
+    @Test
+    void should_load_a_legacy_rejected_row_without_a_reason() {
+        AIInitiative initiative = adapter.create(createRiskAssessedInitiative());
+        entityManager.flush();
+        entityManager.clear();
+        jdbcTemplate.update("update ai_initiatives set status = 'REJECTED' where id = ?",
+                initiative.id().value());
+
+        AIInitiative loaded = adapter.findById(initiative.id()).orElseThrow().initiative();
+
+        assertEquals(InitiativeStatus.REJECTED, loaded.status());
+        assertNull(loaded.rejectionReason());
+        assertTrue(loaded.domainEvents().isEmpty());
     }
 
     private AIInitiative createRiskAssessedInitiative() {
@@ -199,6 +219,7 @@ class JpaAIInitiativeRepositoryAdapterTest {
         assertEquals(expected.description(), actual.description());
         assertEquals(expected.status(), actual.status());
         assertEquals(expected.preliminaryRisk(), actual.preliminaryRisk());
+        assertEquals(expected.rejectionReason(), actual.rejectionReason());
         assertEquals(expected.usesPersonalData(), actual.usesPersonalData());
         assertEquals(expected.impactsRights(), actual.impactsRights());
         assertEquals(expected.createdAt(), actual.createdAt());
