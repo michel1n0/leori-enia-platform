@@ -122,6 +122,111 @@ class AISystemTest {
         assertBusinessState(system);
     }
 
+    @Test
+    void should_rehydrate_registered_state_with_normalized_text_and_no_events() {
+        AISystem system = rehydrateSystem();
+
+        assertBusinessState(system);
+        assertTrue(system.domainEvents().isEmpty());
+    }
+
+    @Test
+    void should_require_system_id_when_rehydrating() {
+        var exception = assertThrows(NullPointerException.class, () -> AISystem.rehydrate(
+                null, ORGANIZATION_ID, SOURCE_ID, "Name", "Description", AISystemStatus.REGISTERED, CREATED_AT));
+
+        assertEquals("AI system id is required", exception.getMessage());
+    }
+
+    @Test
+    void should_require_organization_id_when_rehydrating() {
+        var exception = assertThrows(NullPointerException.class, () -> AISystem.rehydrate(
+                SYSTEM_ID, null, SOURCE_ID, "Name", "Description", AISystemStatus.REGISTERED, CREATED_AT));
+
+        assertEquals("Organization id is required", exception.getMessage());
+    }
+
+    @Test
+    void should_require_source_initiative_id_when_rehydrating() {
+        var exception = assertThrows(NullPointerException.class, () -> AISystem.rehydrate(
+                SYSTEM_ID, ORGANIZATION_ID, null, "Name", "Description", AISystemStatus.REGISTERED, CREATED_AT));
+
+        assertEquals("Source initiative id is required", exception.getMessage());
+    }
+
+    @Test
+    void should_require_status_when_rehydrating() {
+        var exception = assertThrows(NullPointerException.class, () -> AISystem.rehydrate(
+                SYSTEM_ID, ORGANIZATION_ID, SOURCE_ID, "Name", "Description", null, CREATED_AT));
+
+        assertEquals("AI system status is required", exception.getMessage());
+    }
+
+    @Test
+    void should_require_created_at_when_rehydrating() {
+        var exception = assertThrows(NullPointerException.class, () -> AISystem.rehydrate(
+                SYSTEM_ID, ORGANIZATION_ID, SOURCE_ID, "Name", "Description", AISystemStatus.REGISTERED, null));
+
+        assertEquals("CreatedAt is required", exception.getMessage());
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"   ", "\t", "\n", "\u0000", "\u2003", "\u0000 \u2003\t", "\t\u2003\u0000"})
+    void should_reject_name_that_is_null_or_blank_after_trimming_when_rehydrating(String name) {
+        var exception = assertThrows(IllegalArgumentException.class, () -> AISystem.rehydrate(
+                SYSTEM_ID, ORGANIZATION_ID, SOURCE_ID, name, "Description", AISystemStatus.REGISTERED, CREATED_AT));
+
+        assertEquals("Name is required", exception.getMessage());
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"   ", "\t", "\n", "\u0000", "\u2003", "\u0000 \u2003\t", "\t\u2003\u0000"})
+    void should_reject_description_that_is_null_or_blank_after_trimming_when_rehydrating(String description) {
+        var exception = assertThrows(IllegalArgumentException.class, () -> AISystem.rehydrate(
+                SYSTEM_ID, ORGANIZATION_ID, SOURCE_ID, "Name", description, AISystemStatus.REGISTERED, CREATED_AT));
+
+        assertEquals("Description is required", exception.getMessage());
+    }
+
+    @Test
+    void should_not_impose_arbitrary_text_length_limits_when_rehydrating() {
+        String name = "n".repeat(300);
+        String description = "d".repeat(5000);
+
+        AISystem system = AISystem.rehydrate(
+                SYSTEM_ID, ORGANIZATION_ID, SOURCE_ID, name, description, AISystemStatus.REGISTERED, CREATED_AT);
+
+        assertEquals(name, system.name());
+        assertEquals(description, system.description());
+        assertTrue(system.domainEvents().isEmpty());
+    }
+
+    @Test
+    void should_keep_restored_events_empty_and_immutable_when_inspected_or_cleared() {
+        AISystem system = rehydrateSystem();
+        var snapshot = system.domainEvents();
+
+        assertTrue(snapshot.isEmpty());
+        assertThrows(UnsupportedOperationException.class, () -> snapshot.add(
+                new AISystemRegistered(SYSTEM_ID, ORGANIZATION_ID, SOURCE_ID, CREATED_AT)));
+        assertEquals(snapshot, system.domainEvents());
+
+        system.clearDomainEvents();
+
+        assertTrue(snapshot.isEmpty());
+        assertTrue(system.domainEvents().isEmpty());
+        assertBusinessState(system);
+    }
+
+    private AISystem rehydrateSystem() {
+        return AISystem.rehydrate(
+                SYSTEM_ID, ORGANIZATION_ID, SOURCE_ID,
+                "  Fraud Detection System  ", "  Detect suspicious transactions  ",
+                AISystemStatus.REGISTERED, CREATED_AT);
+    }
+
     private void assertBusinessState(AISystem system) {
         assertAll(
                 () -> assertEquals(SYSTEM_ID, system.id()),

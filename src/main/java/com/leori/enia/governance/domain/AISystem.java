@@ -23,19 +23,45 @@ public final class AISystem {
     private final List<DomainEvent> domainEvents = new ArrayList<>();
 
     private AISystem(Builder builder) {
+        this(builder, AISystemStatus.REGISTERED);
+
+        domainEvents.add(new AISystemRegistered(id, organizationId, sourceInitiativeId, createdAt));
+    }
+
+    private AISystem(Builder builder, AISystemStatus status) {
         this.id = Objects.requireNonNull(builder.id, "AI system id is required");
         this.organizationId = Objects.requireNonNull(builder.organizationId, "Organization id is required");
         this.sourceInitiativeId = Objects.requireNonNull(builder.sourceInitiativeId, "Source initiative id is required");
         this.name = requireText(builder.name, "Name is required");
         this.description = requireText(builder.description, "Description is required");
         this.createdAt = Objects.requireNonNull(builder.createdAt, "CreatedAt is required");
-        this.status = AISystemStatus.REGISTERED;
-
-        domainEvents.add(new AISystemRegistered(id, organizationId, sourceInitiativeId, createdAt));
+        this.status = Objects.requireNonNull(status, "AI system status is required");
+        if (status != AISystemStatus.REGISTERED) {
+            throw new IllegalArgumentException("Unsupported AI system status for rehydration: " + status);
+        }
     }
 
     public static Builder builder() {
         return new Builder();
+    }
+
+    /** Restores persisted business state without registering a new system or emitting events. */
+    public static AISystem rehydrate(
+            AISystemId id,
+            OrganizationId organizationId,
+            AIInitiativeId sourceInitiativeId,
+            String name,
+            String description,
+            AISystemStatus status,
+            Instant createdAt
+    ) {
+        return new AISystem(builder()
+                .id(id)
+                .organizationId(organizationId)
+                .sourceInitiativeId(sourceInitiativeId)
+                .name(name)
+                .description(description)
+                .createdAt(createdAt), status);
     }
 
     private static String requireText(String value, String message) {
