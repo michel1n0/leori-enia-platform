@@ -1,6 +1,7 @@
 package com.leori.enia.initiative.infrastructure.persistence;
 
 import com.leori.enia.LeoriEniaApplication;
+import com.leori.enia.governance.application.port.AISystemRepository;
 import com.leori.enia.initiative.application.ApproveAIInitiativeUseCase;
 import com.leori.enia.initiative.application.AssessRiskAIInitiativeUseCase;
 import com.leori.enia.initiative.application.CreateAIInitiativeCommand;
@@ -94,7 +95,11 @@ class LeoriEniaApplicationIntegrationTest {
         assertNotNull(dataSource);
         assertNotNull(transactionManager);
         assertNotNull(clock);
-        assertEquals("3", flyway.info().current().getVersion().toString());
+        assertEquals("4", flyway.info().current().getVersion().toString());
+        assertNotNull(context.getBean(AISystemRepository.class));
+        assertTrue(entityManagerFactory.getMetamodel().getEntities().stream().anyMatch(entity ->
+                entity.getJavaType().getName().equals(
+                        "com.leori.enia.governance.infrastructure.persistence.AISystemJpaEntity")));
         assertTrue(AopUtils.isAopProxy(create));
 
         AIInitiative created = create.execute(new CreateAIInitiativeCommand(

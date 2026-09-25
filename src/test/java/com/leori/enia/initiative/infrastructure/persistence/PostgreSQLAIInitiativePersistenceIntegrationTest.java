@@ -81,7 +81,7 @@ class PostgreSQLAIInitiativePersistenceIntegrationTest {
     @Test
     void should_apply_v1_with_postgresql_native_types() {
         assertEquals("1", flyway.info().applied()[0].getVersion().toString());
-        assertEquals("3", flyway.info().current().getVersion().toString());
+        assertEquals("4", flyway.info().current().getVersion().toString());
 
         Integer tableCount = jdbcTemplate.queryForObject(
                 """

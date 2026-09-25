@@ -59,7 +59,7 @@ class JpaAIInitiativeRepositoryAdapterTest {
     @Test
     void should_apply_the_flyway_baseline_migration() {
         assertEquals("1", flyway.info().applied()[0].getVersion().toString());
-        assertEquals("3", flyway.info().current().getVersion().toString());
+        assertEquals("4", flyway.info().current().getVersion().toString());
 
         Set<String> columns = Set.copyOf(jdbcTemplate.queryForList(
                 """
