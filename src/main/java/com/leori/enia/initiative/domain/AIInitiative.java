@@ -2,6 +2,7 @@ package com.leori.enia.initiative.domain;
 
 import com.leori.enia.initiative.domain.event.AIInitiativeRiskAssessed;
 import com.leori.enia.initiative.domain.event.AIInitiativeSubmitted;
+import com.leori.enia.initiative.domain.exception.AIInitiativeNotApprovedForSystemRegistrationException;
 import com.leori.enia.organization.domain.OrganizationId;
 import com.leori.enia.shared.domain.DomainEvent;
 import com.leori.enia.initiative.domain.event.AIInitiativeApproved;
@@ -119,6 +120,12 @@ import com.leori.enia.initiative.domain.event.AIInitiativeRejected;
           status = InitiativeStatus.UNDER_ASSESSMENT;
       }
 
+      public void requireApprovedForSystemRegistration() {
+          if (status != InitiativeStatus.APPROVED) {
+              throw new AIInitiativeNotApprovedForSystemRegistrationException(id, status);
+          }
+      }
+
       public void assessRisk(RiskLevel riskLevel, Instant occurredAt) {
           requireStatus(InitiativeStatus.UNDER_ASSESSMENT);
 
@@ -178,11 +185,15 @@ import com.leori.enia.initiative.domain.event.AIInitiativeRejected;
       }
 
       private static String requireText(String value, String message) {
-          if (value == null || value.isBlank()) {
+          if (value == null) {
+              throw new IllegalArgumentException(message);
+          }
+          String normalized = value.trim();
+          if (normalized.isBlank()) {
               throw new IllegalArgumentException(message);
           }
 
-          return value.trim();
+          return normalized;
       }
 
       public AIInitiativeId id() {

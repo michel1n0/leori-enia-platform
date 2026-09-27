@@ -2,6 +2,7 @@ package com.leori.enia.initiative.domain;
 
 import com.leori.enia.initiative.domain.event.AIInitiativeApproved;
 import com.leori.enia.initiative.domain.event.AIInitiativeRejected;
+import com.leori.enia.initiative.domain.exception.AIInitiativeNotApprovedForSystemRegistrationException;
 import com.leori.enia.organization.domain.OrganizationId;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -202,6 +203,63 @@ class AIInitiativeTest {
                 () -> assertEquals(NOW, initiative.createdAt()),
                 () -> assertTrue(initiative.domainEvents().isEmpty())
         );
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\u0000", "\u0000\u0000", "\u001F", "\u0000 \t"})
+    void should_reject_text_that_becomes_empty_after_normalization(String text) {
+        assertAll(
+                () -> assertThrows(IllegalArgumentException.class, () -> AIInitiative.builder()
+                        .id(INITIATIVE_ID)
+                        .organizationId(ORGANIZATION_ID)
+                        .name(text)
+                        .description("Description")
+                        .createdAt(NOW)
+                        .build()),
+                () -> assertThrows(IllegalArgumentException.class, () -> AIInitiative.builder()
+                        .id(INITIATIVE_ID)
+                        .organizationId(ORGANIZATION_ID)
+                        .name("Name")
+                        .description(text)
+                        .createdAt(NOW)
+                        .build()),
+                () -> assertThrows(IllegalArgumentException.class, () -> AIInitiative.rehydrate(
+                        INITIATIVE_ID,
+                        ORGANIZATION_ID,
+                        text,
+                        "Description",
+                        InitiativeStatus.DRAFT,
+                        RiskLevel.NOT_ASSESSED,
+                        true,
+                        false,
+                        NOW,
+                        null)),
+                () -> assertThrows(IllegalArgumentException.class, () -> AIInitiative.rehydrate(
+                        INITIATIVE_ID,
+                        ORGANIZATION_ID,
+                        "Name",
+                        text,
+                        InitiativeStatus.DRAFT,
+                        RiskLevel.NOT_ASSESSED,
+                        true,
+                        false,
+                        NOW,
+                        null))
+        );
+    }
+
+    @Test
+    void should_keep_existing_text_normalization_rules_for_name_and_description() {
+        AIInitiative initiative = AIInitiative.builder()
+                .id(INITIATIVE_ID)
+                .organizationId(ORGANIZATION_ID)
+                .name("  Initiative name  ")
+                .description("  Initiative description  ")
+                .createdAt(NOW)
+                .build();
+
+        assertEquals("Initiative name", initiative.name());
+        assertEquals("Initiative description", initiative.description());
     }
 
     @ParameterizedTest
@@ -499,6 +557,42 @@ class AIInitiativeTest {
         assertTrue(legacy.domainEvents().isEmpty());
     }
 
+    @Test
+    void approved_initiative_allows_system_registration_without_mutation_or_events() {
+        AIInitiative initiative = rehydrate(InitiativeStatus.APPROVED, RiskLevel.HIGH);
+        var eventsBefore = initiative.domainEvents();
+
+        initiative.requireApprovedForSystemRegistration();
+
+        assertEquals(InitiativeStatus.APPROVED, initiative.status());
+        assertEquals(RiskLevel.HIGH, initiative.preliminaryRisk());
+        assertEquals(eventsBefore, initiative.domainEvents());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = InitiativeStatus.class,
+            names = {"DRAFT", "SUBMITTED", "UNDER_ASSESSMENT", "RISK_ASSESSED", "REJECTED"})
+    void non_approved_initiatives_reject_system_registration_without_mutation_or_events(InitiativeStatus status) {
+        AIInitiative initiative = initiativeWithStatus(status);
+        var eventsBefore = initiative.domainEvents();
+        RiskLevel riskBefore = initiative.preliminaryRisk();
+        String reasonBefore = initiative.rejectionReason();
+
+        AIInitiativeNotApprovedForSystemRegistrationException exception = assertThrows(
+                AIInitiativeNotApprovedForSystemRegistrationException.class,
+                initiative::requireApprovedForSystemRegistration
+        );
+
+        assertEquals(initiative.id(), exception.initiativeId());
+        assertEquals(status, exception.actualStatus());
+        assertEquals("AI initiative must be APPROVED before registering an AI system: "
+                + initiative.id() + " was " + status, exception.getMessage());
+        assertEquals(status, initiative.status());
+        assertEquals(riskBefore, initiative.preliminaryRisk());
+        assertEquals(reasonBefore, initiative.rejectionReason());
+        assertEquals(eventsBefore, initiative.domainEvents());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"", "   ", "\t\n", "\u0000", "\u2003"})
     void rehydration_rejects_blank_reasons(String reason) {
@@ -534,6 +628,27 @@ class AIInitiativeTest {
                 .impactsRights(true)
                 .createdAt(NOW)
                 .build();
+    }
+
+    private AIInitiative initiativeWithStatus(InitiativeStatus status) {
+        return switch (status) {
+            case DRAFT -> createInitiative();
+            case SUBMITTED -> {
+                AIInitiative initiative = createInitiative();
+                initiative.submit(NOW);
+                yield initiative;
+            }
+            case UNDER_ASSESSMENT -> {
+                AIInitiative initiative = createInitiative();
+                initiative.submit(NOW);
+                initiative.startAssessment();
+                yield initiative;
+            }
+            case RISK_ASSESSED -> rehydrate(InitiativeStatus.RISK_ASSESSED, RiskLevel.HIGH);
+            case REJECTED -> rehydrate(InitiativeStatus.REJECTED, RiskLevel.HIGH);
+            case APPROVED, EXPERIMENTATION, READY_FOR_DEPLOYMENT, ACTIVE, SUSPENDED, RETIRED ->
+                    throw new IllegalArgumentException("Unsupported test status: " + status);
+        };
     }
 
     private AIInitiative rehydrate(
