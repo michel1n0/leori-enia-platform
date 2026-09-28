@@ -1,25 +1,32 @@
 package com.leori.enia.governance.infrastructure.web;
 
+import com.leori.enia.governance.application.GetAISystemUseCase;
 import com.leori.enia.governance.application.RegisterAISystemCommand;
 import com.leori.enia.governance.application.RegisterAISystemUseCase;
+import com.leori.enia.governance.domain.AISystemId;
 import com.leori.enia.initiative.domain.AIInitiativeId;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/ai-systems")
 public class AISystemController {
 
     private final RegisterAISystemUseCase registerAISystem;
+    private final GetAISystemUseCase getAISystem;
 
-    public AISystemController(RegisterAISystemUseCase registerAISystem) {
+    public AISystemController(RegisterAISystemUseCase registerAISystem, GetAISystemUseCase getAISystem) {
         this.registerAISystem = registerAISystem;
+        this.getAISystem = getAISystem;
     }
 
     @PostMapping
@@ -31,5 +38,11 @@ public class AISystemController {
         ));
         URI location = URI.create("/api/v1/ai-systems/" + registered.id().value());
         return ResponseEntity.created(location).body(AISystemResponse.from(registered));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<AISystemResponse> get(@PathVariable UUID id) {
+        var system = getAISystem.execute(new AISystemId(id));
+        return ResponseEntity.ok(AISystemResponse.from(system));
     }
 }

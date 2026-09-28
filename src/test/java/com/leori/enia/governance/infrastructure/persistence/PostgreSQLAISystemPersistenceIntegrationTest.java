@@ -128,6 +128,22 @@ class PostgreSQLAISystemPersistenceIntegrationTest {
     }
 
     @Test
+    void find_by_id_returns_committed_system_without_replaying_events() {
+        AISystem original = repository.create(system(AISystemId.generate(), seedSource()));
+
+        var result = repository.findById(original.id());
+
+        assertTrue(result.isPresent());
+        assertState(original, result.orElseThrow());
+        assertTrue(result.orElseThrow().domainEvents().isEmpty());
+    }
+
+    @Test
+    void find_by_id_returns_empty_when_missing() {
+        assertTrue(repository.findById(AISystemId.generate()).isEmpty());
+    }
+
+    @Test
     void rejects_duplicate_id_without_overwriting_or_reporting_a_source_duplicate() {
         AISystem original = repository.create(system(AISystemId.generate(), seedSource()));
         AISystem duplicateId = system(original.id(), seedSource());

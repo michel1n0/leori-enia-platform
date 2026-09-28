@@ -636,27 +636,28 @@ At completion, report:
 
 ---
 
-## 23. Current Next Increment
+## 23. Current Increment and Authorized Capabilities
 
-The current increment is AI Initiative Optimistic Locking:
+The AI Initiative Optimistic Locking increment is complete.
+Its no-REST restriction applied only to that historical increment.
 
-- stale writes must be rejected rather than silently overwriting newer state
-- loaded revisions must survive the Domain/persistence mapping boundary
-- Domain remains persistence-ignorant; Application remains framework-independent
-- V1 remains immutable; version schema changes belong in V2
-- PostgreSQL concurrency verification is required
-- Commit 13 transaction boundary remains unchanged
-- existing Domain, Application, H2, PostgreSQL, and transaction tests retained
+The following capabilities have been explicitly authorized:
 
-Constraints for this increment:
+- Increment #28: POST /api/v1/ai-systems
+- Increment #29: GET /api/v1/ai-systems/{id}
 
-- no REST
-- no domain-event publication
-- no automatic retries or pessimistic/distributed locking
+Increment #29 requirements:
 
-After implementation:
+- Retrieve an existing AI system by its identifier.
+- Return HTTP 200 with the seven public response fields.
+- Return HTTP 404 when the system does not exist.
+- Return HTTP 400 for an invalid UUID.
+- Do not expose internal fields or an ETag.
+- Do not mutate state or publish domain events during retrieval.
 
-    mvn clean test
-    git diff --check
+The technology restrictions in section 15 require explicit
+authorization for new capabilities. Existing authorized REST,
+PostgreSQL, JPA and Flyway implementations must be preserved.
 
-Do not commit automatically.
+Future increments must be explicitly authorized.
+Do not expand the current scope without authorization.

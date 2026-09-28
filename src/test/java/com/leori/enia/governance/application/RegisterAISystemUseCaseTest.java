@@ -236,6 +236,11 @@ class RegisterAISystemUseCaseTest {
         private int createCount;
 
         @Override
+        public Optional<AISystem> findById(com.leori.enia.governance.domain.AISystemId id) {
+            throw new AssertionError("Registration must not read an AI system");
+        }
+
+        @Override
         public AISystem create(AISystem system) {
             createCount++;
             createdSystem = system;

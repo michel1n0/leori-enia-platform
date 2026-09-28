@@ -20,13 +20,16 @@ import java.sql.SQLException;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class JpaAISystemRepositoryAdapterTest {
 
@@ -131,6 +134,37 @@ class JpaAISystemRepositoryAdapterTest {
         doThrow(failure).when(entityManager).flush();
 
         assertSame(failure, assertThrows(PersistenceException.class, () -> adapter.create(system())));
+    }
+
+    @Test
+    void find_by_id_returns_rehydrated_system_without_events() {
+        AISystem persisted = system();
+        when(entityManager.find(AISystemJpaEntity.class, persisted.id().value()))
+                .thenReturn(new AISystemPersistenceMapper().toEntity(persisted));
+
+        var result = adapter.findById(persisted.id());
+
+        assertTrue(result.isPresent());
+        assertState(persisted, result.orElseThrow());
+        assertTrue(result.orElseThrow().domainEvents().isEmpty());
+    }
+
+    @Test
+    void find_by_id_returns_empty_when_missing() {
+        AISystemId missingId = AISystemId.generate();
+        when(entityManager.find(AISystemJpaEntity.class, missingId.value())).thenReturn(null);
+
+        assertFalse(adapter.findById(missingId).isPresent());
+    }
+
+    private void assertState(AISystem expected, AISystem actual) {
+        assertEquals(expected.id(), actual.id());
+        assertEquals(expected.organizationId(), actual.organizationId());
+        assertEquals(expected.sourceInitiativeId(), actual.sourceInitiativeId());
+        assertEquals(expected.name(), actual.name());
+        assertEquals(expected.description(), actual.description());
+        assertEquals(expected.status(), actual.status());
+        assertEquals(expected.createdAt(), actual.createdAt());
     }
 
     private void failAt(boolean duringPersist, PersistenceException failure) {

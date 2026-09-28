@@ -1,5 +1,6 @@
 package com.leori.enia.governance.infrastructure.configuration;
 
+import com.leori.enia.governance.application.GetAISystemUseCase;
 import com.leori.enia.governance.application.RegisterAISystemUseCase;
 import com.leori.enia.governance.application.port.AISystemRepository;
 import com.leori.enia.governance.infrastructure.persistence.GovernancePersistenceConfiguration;
@@ -59,6 +60,14 @@ public class GovernanceApplicationConfiguration {
         return transactional(
                 new RegisterAISystemUseCase(initiativeRepository, systemRepository, clock),
                 RegisterAISystemUseCase.class
+        );
+    }
+
+    @Bean
+    GetAISystemUseCase getAISystemUseCase(AISystemRepository systemRepository) {
+        return transactional(
+                new GetAISystemUseCase(systemRepository),
+                GetAISystemUseCase.class
         );
     }
 

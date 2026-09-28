@@ -282,8 +282,7 @@ class AIInitiativeApplicationTransactionIntegrationTest {
     @EnableAutoConfiguration
     @Import(AIInitiativeApplicationConfiguration.class)
     static class TestConfiguration {
-        @Bean
-        @Primary
+        @Bean("aiInitiativeClock")
         Clock fixedClock() {
             return Clock.fixed(NOW, ZoneOffset.UTC);
         }

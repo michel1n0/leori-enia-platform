@@ -22,7 +22,8 @@ import org.springframework.transaction.interceptor.NameMatchTransactionAttribute
 import org.springframework.transaction.interceptor.RollbackRuleAttribute;
 import org.springframework.transaction.interceptor.RuleBasedTransactionAttribute;
 import org.springframework.transaction.interceptor.TransactionInterceptor;
-
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
@@ -51,31 +52,35 @@ public class AIInitiativeApplicationConfiguration {
         transactions.setTransactionAttributeSource(source);
     }
 
-    @Bean
-    Clock aiInitiativeClock() {
-        return Clock.tick(Clock.systemUTC(), Duration.ofNanos(1_000));
-    }
+@Bean
+@ConditionalOnMissingBean(name = "aiInitiativeClock")
+Clock aiInitiativeClock() {
+    return Clock.tick(
+            Clock.systemUTC(),
+            Duration.ofNanos(1_000)
+    );
+}
 
     @Bean
     GetAIInitiativeUseCase getAIInitiativeUseCase(AIInitiativeRepository repository) {
         return new GetAIInitiativeUseCase(repository);
     }
 
-    @Bean
-    CreateAIInitiativeUseCase createAIInitiativeUseCase(
-            AIInitiativeRepository repository,
-            Clock clock
-    ) {
-        return transactional(
-                new CreateAIInitiativeUseCase(repository, clock),
-                CreateAIInitiativeUseCase.class
-        );
-    }
+  @Bean
+CreateAIInitiativeUseCase createAIInitiativeUseCase(
+        AIInitiativeRepository repository,
+        @Qualifier("aiInitiativeClock") Clock clock
+) {
+    return transactional(
+            new CreateAIInitiativeUseCase(repository, clock),
+            CreateAIInitiativeUseCase.class
+    );
+}
 
     @Bean
     SubmitAIInitiativeUseCase submitAIInitiativeUseCase(
             AIInitiativeRepository repository,
-            Clock clock
+            @Qualifier("aiInitiativeClock") Clock clock
     ) {
         return transactional(
                 new SubmitAIInitiativeUseCase(repository, clock),
@@ -96,7 +101,7 @@ public class AIInitiativeApplicationConfiguration {
     @Bean
     AssessRiskAIInitiativeUseCase assessRiskAIInitiativeUseCase(
             AIInitiativeRepository repository,
-            Clock clock
+            @Qualifier("aiInitiativeClock") Clock clock
     ) {
         return transactional(
                 new AssessRiskAIInitiativeUseCase(repository, clock),
@@ -107,7 +112,7 @@ public class AIInitiativeApplicationConfiguration {
     @Bean
     ApproveAIInitiativeUseCase approveAIInitiativeUseCase(
             AIInitiativeRepository repository,
-            Clock clock
+            @Qualifier("aiInitiativeClock") Clock clock
     ) {
         return transactional(
                 new ApproveAIInitiativeUseCase(repository, clock),
@@ -118,7 +123,7 @@ public class AIInitiativeApplicationConfiguration {
     @Bean
     RejectAIInitiativeUseCase rejectAIInitiativeUseCase(
             AIInitiativeRepository repository,
-            Clock clock
+            @Qualifier("aiInitiativeClock") Clock clock
     ) {
         return transactional(
                 new RejectAIInitiativeUseCase(repository, clock),

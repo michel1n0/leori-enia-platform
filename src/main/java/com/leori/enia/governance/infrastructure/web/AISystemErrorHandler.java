@@ -1,6 +1,7 @@
 package com.leori.enia.governance.infrastructure.web;
 
 import com.leori.enia.governance.application.exception.AISystemAlreadyRegisteredException;
+import com.leori.enia.governance.application.exception.AISystemNotFoundException;
 import com.leori.enia.initiative.application.exception.AIInitiativeNotFoundException;
 import com.leori.enia.initiative.domain.exception.AIInitiativeNotApprovedForSystemRegistrationException;
 import org.springframework.http.HttpStatus;
@@ -8,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.Map;
@@ -34,6 +36,21 @@ public class AISystemErrorHandler {
     ResponseEntity<ErrorResponse> alreadyRegistered() {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse("AI_SYSTEM_ALREADY_REGISTERED", "AI system already registered"));
+    }
+
+    @ExceptionHandler(AISystemNotFoundException.class)
+    ResponseEntity<ErrorResponse> systemNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse("AI_SYSTEM_NOT_FOUND", "AI system not found"));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ErrorResponse> invalidPathVariable(MethodArgumentTypeMismatchException exception) {
+        if ("id".equals(exception.getName())) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse("INVALID_AI_SYSTEM_ID", "Invalid AI system id"));
+        }
+        throw exception;
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

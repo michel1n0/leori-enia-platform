@@ -2,6 +2,9 @@ package com.leori.enia.governance.application.port;
 
 import com.leori.enia.governance.application.exception.AISystemAlreadyRegisteredException;
 import com.leori.enia.governance.domain.AISystem;
+import com.leori.enia.governance.domain.AISystemId;
+
+import java.util.Optional;
 
 public interface AISystemRepository {
 
@@ -15,4 +18,7 @@ public interface AISystemRepository {
      * @throws AISystemAlreadyRegisteredException if the source already has a system
      */
     AISystem create(AISystem system);
+
+    /** Returns the system with the given identifier, or empty if none exists. */
+    Optional<AISystem> findById(AISystemId id);
 }

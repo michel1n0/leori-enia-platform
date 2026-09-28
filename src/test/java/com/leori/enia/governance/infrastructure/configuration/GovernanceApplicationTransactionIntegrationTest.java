@@ -5,6 +5,7 @@ import com.leori.enia.governance.application.RegisterAISystemUseCase;
 import com.leori.enia.governance.application.exception.AISystemAlreadyRegisteredException;
 import com.leori.enia.governance.application.port.AISystemRepository;
 import com.leori.enia.governance.domain.AISystem;
+import com.leori.enia.governance.domain.AISystemId;
 import com.leori.enia.governance.domain.event.AISystemRegistered;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
 import com.leori.enia.initiative.application.port.LoadedAIInitiative;
@@ -314,6 +315,11 @@ class GovernanceApplicationTransactionIntegrationTest {
             createTransaction = currentTransaction();
             creates++;
             return observeWrite(system, () -> delegate.create(system));
+        }
+
+        @Override
+        public Optional<AISystem> findById(AISystemId id) {
+            return delegate.findById(id);
         }
 
         private AISystem observeWrite(AISystem system, Supplier<AISystem> write) {

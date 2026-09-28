@@ -3,6 +3,7 @@ package com.leori.enia.governance.infrastructure.persistence;
 import com.leori.enia.governance.application.exception.AISystemAlreadyRegisteredException;
 import com.leori.enia.governance.application.port.AISystemRepository;
 import com.leori.enia.governance.domain.AISystem;
+import com.leori.enia.governance.domain.AISystemId;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceException;
 import org.hibernate.JDBCException;
@@ -13,6 +14,7 @@ import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /** Transaction advice is supplied by GovernancePersistenceConfiguration. */
@@ -41,6 +43,13 @@ public final class JpaAISystemRepositoryAdapter implements AISystemRepository {
             throw failure;
         }
         return system;
+    }
+
+    @Override
+    public Optional<AISystem> findById(AISystemId id) {
+        Objects.requireNonNull(id, "AI system id is required");
+        return Optional.ofNullable(entityManager.find(AISystemJpaEntity.class, id.value()))
+                .map(mapper::toDomain);
     }
 
     private boolean isSourceDuplicate(Throwable failure) {
