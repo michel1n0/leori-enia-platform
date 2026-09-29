@@ -280,6 +280,11 @@ class RegistryApplicationTransactionIntegrationTest {
             return observeWrite(model, () -> delegate.create(model));
         }
 
+        @Override
+        public Optional<AIModel> findById(com.leori.enia.registry.domain.AIModelId id) {
+            return delegate.findById(id);
+        }
+
         private AIModel observeWrite(AIModel model, Supplier<AIModel> write) {
             AIModel result = write.get();
             // The adapter already flushed, but we force a second flush to confirm the row is visible

@@ -299,6 +299,11 @@ class RegisterAIModelUseCaseTest {
             return model;
         }
 
+        @Override
+        public Optional<AIModel> findById(AIModelId id) {
+            throw new AssertionError("Registration must not read an AI model");
+        }
+
         void reset() {
             createdModel = null;
             failure = null;

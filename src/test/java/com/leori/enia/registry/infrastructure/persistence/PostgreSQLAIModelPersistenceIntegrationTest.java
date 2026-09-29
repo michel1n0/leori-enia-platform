@@ -160,6 +160,23 @@ class PostgreSQLAIModelPersistenceIntegrationTest {
     }
 
     @Test
+    void find_by_id_returns_committed_model_without_replaying_events() {
+        AISystemId systemId = seedSystem();
+        AIModel original = repository.create(model(AIModelId.generate(), systemId));
+
+        var result = repository.findById(original.id());
+
+        assertTrue(result.isPresent());
+        assertState(original, result.orElseThrow());
+        assertTrue(result.orElseThrow().domainEvents().isEmpty());
+    }
+
+    @Test
+    void find_by_id_returns_empty_when_missing() {
+        assertTrue(repository.findById(AIModelId.generate()).isEmpty());
+    }
+
+    @Test
     void joins_outer_transaction_and_rolls_back_an_already_flushed_insert() {
         AISystemId systemId = seedSystem();
         AIModel input = model(AIModelId.generate(), systemId);

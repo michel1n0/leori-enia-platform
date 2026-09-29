@@ -10,13 +10,16 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class JpaAIModelRepositoryAdapterTest {
 
@@ -59,6 +62,27 @@ class JpaAIModelRepositoryAdapterTest {
         doThrow(failure).when(entityManager).flush();
 
         assertSame(failure, assertThrows(PersistenceException.class, () -> adapter.create(model())));
+    }
+
+    @Test
+    void find_by_id_returns_rehydrated_model_without_events() {
+        AIModel persisted = model();
+        when(entityManager.find(AIModelJpaEntity.class, persisted.id().value()))
+                .thenReturn(new AIModelPersistenceMapper().toEntity(persisted));
+
+        var result = adapter.findById(persisted.id());
+
+        assertTrue(result.isPresent());
+        assertState(persisted, result.orElseThrow());
+        assertTrue(result.orElseThrow().domainEvents().isEmpty());
+    }
+
+    @Test
+    void find_by_id_returns_empty_when_missing() {
+        AIModelId missingId = AIModelId.generate();
+        when(entityManager.find(AIModelJpaEntity.class, missingId.value())).thenReturn(null);
+
+        assertFalse(adapter.findById(missingId).isPresent());
     }
 
     private void assertState(AIModel expected, AIModel actual) {

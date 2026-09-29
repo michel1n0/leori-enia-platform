@@ -37,6 +37,7 @@ public class RegistryPersistenceConfiguration {
         attribute.setRollbackRules(List.of(new RollbackRuleAttribute(Throwable.class)));
         NameMatchTransactionAttributeSource source = new NameMatchTransactionAttributeSource();
         source.addTransactionalMethod("create", attribute);
+        source.addTransactionalMethod("findById", attribute);
 
         TransactionInterceptor transactions = new TransactionInterceptor();
         transactions.setTransactionManager(transactionManager);

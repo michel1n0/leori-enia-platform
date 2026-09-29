@@ -2,6 +2,7 @@ package com.leori.enia.registry.infrastructure.configuration;
 
 import com.leori.enia.governance.application.port.AISystemRepository;
 import com.leori.enia.governance.infrastructure.persistence.GovernancePersistenceConfiguration;
+import com.leori.enia.registry.application.GetAIModelUseCase;
 import com.leori.enia.registry.application.RegisterAIModelUseCase;
 import com.leori.enia.registry.application.port.AIModelRepository;
 import com.leori.enia.registry.infrastructure.persistence.RegistryPersistenceConfiguration;
@@ -60,6 +61,14 @@ public class RegistryApplicationConfiguration {
         return transactional(
                 new RegisterAIModelUseCase(systemRepository, modelRepository, clock),
                 RegisterAIModelUseCase.class
+        );
+    }
+
+    @Bean
+    GetAIModelUseCase getAIModelUseCase(AIModelRepository modelRepository) {
+        return transactional(
+                new GetAIModelUseCase(modelRepository),
+                GetAIModelUseCase.class
         );
     }
 
