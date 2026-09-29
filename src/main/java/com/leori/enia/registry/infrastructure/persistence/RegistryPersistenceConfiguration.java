@@ -1,6 +1,7 @@
 package com.leori.enia.registry.infrastructure.persistence;
 
 import com.leori.enia.registry.application.port.AIModelRepository;
+import com.leori.enia.registry.application.port.DatasetRepository;
 import jakarta.persistence.EntityManagerFactory;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.boot.autoconfigure.domain.EntityScan;
@@ -20,7 +21,7 @@ import java.util.List;
 /** Uses the existing JPA factory and transaction manager; callers must use the repository bean. */
 @Configuration(proxyBeanMethods = false)
 @EntityScan(basePackageClasses = AIModelJpaEntity.class)
-@Import(AIModelPersistenceMapper.class)
+@Import({AIModelPersistenceMapper.class, DatasetPersistenceMapper.class})
 public class RegistryPersistenceConfiguration {
 
     @Bean
@@ -47,5 +48,30 @@ public class RegistryPersistenceConfiguration {
         factory.setInterfaces(AIModelRepository.class);
         factory.addAdvice(transactions);
         return (AIModelRepository) factory.getProxy();
+    }
+
+    @Bean
+    DatasetRepository datasetRepository(
+            EntityManagerFactory entityManagerFactory,
+            PlatformTransactionManager transactionManager,
+            DatasetPersistenceMapper mapper
+    ) {
+        var adapter = new JpaDatasetRepositoryAdapter(
+                SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory), mapper);
+
+        RuleBasedTransactionAttribute attribute = new RuleBasedTransactionAttribute();
+        attribute.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+        attribute.setRollbackRules(List.of(new RollbackRuleAttribute(Throwable.class)));
+        NameMatchTransactionAttributeSource source = new NameMatchTransactionAttributeSource();
+        source.addTransactionalMethod("create", attribute);
+
+        TransactionInterceptor transactions = new TransactionInterceptor();
+        transactions.setTransactionManager(transactionManager);
+        transactions.setTransactionAttributeSource(source);
+
+        ProxyFactory factory = new ProxyFactory(adapter);
+        factory.setInterfaces(DatasetRepository.class);
+        factory.addAdvice(transactions);
+        return (DatasetRepository) factory.getProxy();
     }
 }

@@ -1,12 +1,11 @@
 package com.leori.enia.registry.infrastructure.persistence;
 
-import com.leori.enia.governance.domain.AISystemId;
 import com.leori.enia.governance.infrastructure.persistence.GovernancePersistenceConfiguration;
 import com.leori.enia.initiative.infrastructure.persistence.AIInitiativePersistenceConfiguration;
-import com.leori.enia.registry.application.port.AIModelRepository;
-import com.leori.enia.registry.domain.AIModel;
-import com.leori.enia.registry.domain.AIModelId;
-import com.leori.enia.registry.domain.event.AIModelRegistered;
+import com.leori.enia.registry.application.port.DatasetRepository;
+import com.leori.enia.registry.domain.Dataset;
+import com.leori.enia.registry.domain.DatasetId;
+import com.leori.enia.registry.domain.event.DatasetRegistered;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.PersistenceException;
 import org.flywaydb.core.Flyway;
@@ -16,7 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -30,6 +28,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -43,8 +42,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Testcontainers
-@SpringJUnitConfig(PostgreSQLAIModelPersistenceIntegrationTest.PersistenceConfiguration.class)
-class PostgreSQLAIModelPersistenceIntegrationTest {
+@SpringJUnitConfig(PostgreSQLDatasetPersistenceIntegrationTest.PersistenceConfiguration.class)
+class PostgreSQLDatasetPersistenceIntegrationTest {
 
     private static final Instant CREATED_AT = Instant.parse("2026-09-28T14:00:00.123456Z");
     private static final UUID ORGANIZATION_UUID = UUID.fromString("10000000-0000-0000-0000-000000000001");
@@ -63,10 +62,10 @@ class PostgreSQLAIModelPersistenceIntegrationTest {
     }
 
     @Autowired
-    private AIModelRepository repository;
+    private DatasetRepository repository;
 
     @Autowired
-    private AIModelPersistenceMapper mapper;
+    private DatasetPersistenceMapper mapper;
 
     @Autowired
     private EntityManagerFactory entityManagerFactory;
@@ -83,26 +82,33 @@ class PostgreSQLAIModelPersistenceIntegrationTest {
     @BeforeEach
     void clearRows() {
         assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
-        jdbc.update("delete from ai_models");
-        jdbc.update("delete from ai_systems");
-        jdbc.update("delete from ai_initiatives");
+        jdbc.update("delete from ai_datasets");
     }
 
     @Test
     void creates_and_commits_all_fields_preserving_input_events_but_not_replaying_them_on_reload() {
-        AISystemId systemId = seedSystem();
-        AIModel input = model(AIModelId.generate(), systemId);
+        Dataset input = dataset(DatasetId.generate());
         var events = input.domainEvents();
 
-        AIModel result = repository.create(input);
+        Dataset result = repository.create(input);
 
         assertSame(input, result);
         assertEquals(1, events.size());
-        assertInstanceOf(AIModelRegistered.class, events.getFirst());
+        assertInstanceOf(DatasetRegistered.class, events.getFirst());
         assertEquals(events, input.domainEvents());
         assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
         assertEquals(1, rowCount());
-        AIModel restored = reload(input.id());
+        jdbc.queryForObject("select id, name, description, created_at from ai_datasets where id = ?",
+                (row, rowNumber) -> {
+                    assertAll(
+                            () -> assertEquals(input.id().value(), row.getObject("id", UUID.class)),
+                            () -> assertEquals(input.name(), row.getString("name")),
+                            () -> assertEquals(input.description(), row.getString("description")),
+                            () -> assertEquals(CREATED_AT, row.getTimestamp("created_at").toInstant())
+                    );
+                    return true;
+                }, input.id().value());
+        Dataset restored = reload(input.id());
         assertState(input, restored);
         assertTrue(restored.domainEvents().isEmpty());
         assertEquals("6", flyway.info().current().getVersion().toString());
@@ -111,9 +117,8 @@ class PostgreSQLAIModelPersistenceIntegrationTest {
 
     @Test
     void rejects_duplicate_id_without_overwriting() {
-        AISystemId systemId = seedSystem();
-        AIModel original = repository.create(model(AIModelId.generate(), systemId));
-        AIModel duplicateId = model(original.id(), systemId);
+        Dataset original = repository.create(dataset(DatasetId.generate()));
+        Dataset duplicateId = dataset(original.id());
 
         assertThrows(PersistenceException.class, () -> repository.create(duplicateId));
 
@@ -122,35 +127,11 @@ class PostgreSQLAIModelPersistenceIntegrationTest {
     }
 
     @Test
-    void rejects_missing_system_id_via_fk_constraint() {
-        AIModel model = model(AIModelId.generate(), AISystemId.generate());
-
-        assertThrows(PersistenceException.class, () -> repository.create(model));
-
-        assertEquals(0, rowCount());
-    }
-
-    @Test
-    void prevents_deleting_a_referenced_system_without_cascading() {
-        AISystemId systemId = seedSystem();
-        AIModel original = repository.create(model(AIModelId.generate(), systemId));
-
-        assertThrows(DataIntegrityViolationException.class,
-                () -> jdbc.update("delete from ai_systems where id = ?", systemId.value()));
-
-        assertEquals(1, jdbc.queryForObject("select count(*) from ai_systems", Integer.class));
-        assertState(original, reload(original.id()));
-    }
-
-    @Test
     void persists_long_text_without_arbitrary_limits() {
-        AISystemId systemId = seedSystem();
-        AIModel input = AIModel.builder()
-                .id(AIModelId.generate())
-                .systemId(systemId)
+        Dataset input = Dataset.builder()
+                .id(DatasetId.generate())
                 .name("n".repeat(300))
                 .description("d".repeat(5000))
-                .provider("p".repeat(200))
                 .createdAt(CREATED_AT)
                 .build();
 
@@ -160,26 +141,8 @@ class PostgreSQLAIModelPersistenceIntegrationTest {
     }
 
     @Test
-    void find_by_id_returns_committed_model_without_replaying_events() {
-        AISystemId systemId = seedSystem();
-        AIModel original = repository.create(model(AIModelId.generate(), systemId));
-
-        var result = repository.findById(original.id());
-
-        assertTrue(result.isPresent());
-        assertState(original, result.orElseThrow());
-        assertTrue(result.orElseThrow().domainEvents().isEmpty());
-    }
-
-    @Test
-    void find_by_id_returns_empty_when_missing() {
-        assertTrue(repository.findById(AIModelId.generate()).isEmpty());
-    }
-
-    @Test
     void joins_outer_transaction_and_rolls_back_an_already_flushed_insert() {
-        AISystemId systemId = seedSystem();
-        AIModel input = model(AIModelId.generate(), systemId);
+        Dataset input = dataset(DatasetId.generate());
 
         assertThrows(FailureAfterFlush.class, () -> new TransactionTemplate(transactionManager)
                 .executeWithoutResult(transaction -> {
@@ -193,83 +156,92 @@ class PostgreSQLAIModelPersistenceIntegrationTest {
     }
 
     @Test
-    void upgrades_v4_to_v5_preserving_system_rows_and_creating_named_constraints() {
-        String schema = "model_upgrade";
-        Flyway.configure().dataSource(POSTGRESQL.getJdbcUrl(), POSTGRESQL.getUsername(), POSTGRESQL.getPassword())
-                .schemas(schema).defaultSchema(schema).target("4").load().migrate();
+    void upgrades_v5_to_v6_preserving_existing_rows_and_creating_dataset_structure() {
+        String schema = "dataset_upgrade";
+        Flyway baseline = Flyway.configure()
+                .dataSource(POSTGRESQL.getJdbcUrl(), POSTGRESQL.getUsername(), POSTGRESQL.getPassword())
+                .schemas(schema).defaultSchema(schema).target("5").load();
+        baseline.migrate();
+        assertEquals("5", baseline.info().current().getVersion().toString());
 
-        // Seed an initiative and a system in the isolated schema.
+        // These existing aggregates are migration fixtures, not Dataset relationships.
         UUID initiativeId = UUID.randomUUID();
         jdbc.update("""
-                insert into model_upgrade.ai_initiatives
+                insert into dataset_upgrade.ai_initiatives
                     (id, organization_id, name, description, status, preliminary_risk,
                      uses_personal_data, impacts_rights, created_at)
                 values (?, ?, 'Source', 'Description', 'DRAFT', 'NOT_ASSESSED', false, false, ?)
                 """, initiativeId, ORGANIZATION_UUID, Timestamp.from(CREATED_AT));
         UUID systemId = UUID.randomUUID();
         jdbc.update("""
-                insert into model_upgrade.ai_systems
+                insert into dataset_upgrade.ai_systems
                     (id, organization_id, source_initiative_id, name, description, status, created_at)
                 values (?, ?, ?, 'System', 'Desc', 'REGISTERED', ?)
                 """, systemId, ORGANIZATION_UUID, initiativeId, Timestamp.from(CREATED_AT));
-        var systemsBefore = jdbc.queryForList("select * from model_upgrade.ai_systems order by id");
+        jdbc.update("""
+                insert into dataset_upgrade.ai_models (id, system_id, name, description, provider, created_at)
+                values (?, ?, 'Model', 'Description', 'Provider', ?)
+                """, UUID.randomUUID(), systemId, Timestamp.from(CREATED_AT));
+        var initiativesBefore = jdbc.queryForList("select * from dataset_upgrade.ai_initiatives order by id");
+        var systemsBefore = jdbc.queryForList("select * from dataset_upgrade.ai_systems order by id");
+        var modelsBefore = jdbc.queryForList("select * from dataset_upgrade.ai_models order by id");
 
         Flyway upgrade = Flyway.configure()
                 .dataSource(POSTGRESQL.getJdbcUrl(), POSTGRESQL.getUsername(), POSTGRESQL.getPassword())
-                .schemas(schema).defaultSchema(schema).target("5").load();
+                .schemas(schema).defaultSchema(schema).target("6").load();
 
         assertEquals(1, upgrade.migrate().migrationsExecuted);
-        assertEquals("5", upgrade.info().current().getVersion().toString());
+        assertEquals("6", upgrade.info().current().getVersion().toString());
         upgrade.validate();
-        assertEquals(systemsBefore, jdbc.queryForList("select * from model_upgrade.ai_systems order by id"));
-        assertEquals(0, jdbc.queryForObject("select count(*) from model_upgrade.ai_models", Integer.class));
-        Set<String> constraints = Set.copyOf(jdbc.queryForList("""
-                select constraint_name from information_schema.table_constraints
-                where table_schema = 'model_upgrade' and table_name = 'ai_models'
+        assertEquals(initiativesBefore, jdbc.queryForList("select * from dataset_upgrade.ai_initiatives order by id"));
+        assertEquals(systemsBefore, jdbc.queryForList("select * from dataset_upgrade.ai_systems order by id"));
+        assertEquals(modelsBefore, jdbc.queryForList("select * from dataset_upgrade.ai_models order by id"));
+        assertEquals(0, jdbc.queryForObject("select count(*) from dataset_upgrade.ai_datasets", Integer.class));
+        Set<String> columns = Set.copyOf(jdbc.queryForList("""
+                select column_name || ':' || data_type || ':' || is_nullable
+                from information_schema.columns
+                where table_schema = 'dataset_upgrade' and table_name = 'ai_datasets'
                 """, String.class));
-        assertTrue(constraints.containsAll(Set.of("pk_ai_models", "fk_ai_models_system")));
+        assertEquals(Set.of("id:uuid:NO", "name:text:NO", "description:text:NO",
+                "created_at:timestamp with time zone:NO"), columns);
+        assertEquals(List.of("pk_ai_datasets"), jdbc.queryForList("""
+                select constraint_name from information_schema.table_constraints
+                where table_schema = 'dataset_upgrade' and table_name = 'ai_datasets'
+                    and constraint_type = 'PRIMARY KEY'
+                """, String.class));
+        assertEquals(List.of("id"), jdbc.queryForList("""
+                select column_name from information_schema.key_column_usage
+                where table_schema = 'dataset_upgrade' and table_name = 'ai_datasets'
+                    and constraint_name = 'pk_ai_datasets'
+                """, String.class));
+        assertEquals(0, jdbc.queryForObject("""
+                select count(*) from information_schema.table_constraints
+                where table_schema = 'dataset_upgrade' and table_name = 'ai_datasets'
+                    and constraint_type in ('FOREIGN KEY', 'UNIQUE')
+                """, Integer.class));
     }
 
-    private AISystemId seedSystem() {
-        UUID initiativeId = UUID.randomUUID();
-        jdbc.update("""
-                insert into ai_initiatives
-                    (id, organization_id, name, description, status, preliminary_risk,
-                     uses_personal_data, impacts_rights, created_at)
-                values (?, ?, 'Source', 'Description', 'DRAFT', 'NOT_ASSESSED', false, false, ?)
-                """, initiativeId, ORGANIZATION_UUID, Timestamp.from(CREATED_AT));
-        AISystemId systemId = AISystemId.generate();
-        jdbc.update("""
-                insert into ai_systems
-                    (id, organization_id, source_initiative_id, name, description, status, created_at)
-                values (?, ?, ?, 'System', 'Desc', 'REGISTERED', ?)
-                """, systemId.value(), ORGANIZATION_UUID, initiativeId, Timestamp.from(CREATED_AT));
-        return systemId;
-    }
-
-    private AIModel model(AIModelId id, AISystemId systemId) {
-        return AIModel.builder()
+    private Dataset dataset(DatasetId id) {
+        return Dataset.builder()
                 .id(id)
-                .systemId(systemId)
-                .name("Model")
+                .name("Dataset")
                 .description("Description")
-                .provider("OpenAI")
                 .createdAt(CREATED_AT)
                 .build();
     }
 
     private int rowCount() {
-        return jdbc.queryForObject("select count(*) from ai_models", Integer.class);
+        return jdbc.queryForObject("select count(*) from ai_datasets", Integer.class);
     }
 
-    private AIModel reload(AIModelId id) {
+    private Dataset reload(DatasetId id) {
         // Independent context and transaction ensure this is a database read, not a cached entity.
         var entityManager = entityManagerFactory.createEntityManager();
         try {
             entityManager.getTransaction().begin();
-            var entity = entityManager.find(AIModelJpaEntity.class, id.value());
+            var entity = entityManager.find(DatasetJpaEntity.class, id.value());
             assertNotNull(entity);
-            AIModel restored = mapper.toDomain(entity);
+            Dataset restored = mapper.toDomain(entity);
             entityManager.getTransaction().commit();
             return restored;
         } finally {
@@ -280,13 +252,11 @@ class PostgreSQLAIModelPersistenceIntegrationTest {
         }
     }
 
-    private void assertState(AIModel expected, AIModel actual) {
+    private void assertState(Dataset expected, Dataset actual) {
         assertAll(
                 () -> assertEquals(expected.id(), actual.id()),
-                () -> assertEquals(expected.systemId(), actual.systemId()),
                 () -> assertEquals(expected.name(), actual.name()),
                 () -> assertEquals(expected.description(), actual.description()),
-                () -> assertEquals(expected.provider(), actual.provider()),
                 () -> assertEquals(expected.createdAt(), actual.createdAt())
         );
     }
