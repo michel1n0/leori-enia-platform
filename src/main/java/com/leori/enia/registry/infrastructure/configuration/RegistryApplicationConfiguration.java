@@ -4,7 +4,9 @@ import com.leori.enia.governance.application.port.AISystemRepository;
 import com.leori.enia.governance.infrastructure.persistence.GovernancePersistenceConfiguration;
 import com.leori.enia.registry.application.GetAIModelUseCase;
 import com.leori.enia.registry.application.RegisterAIModelUseCase;
+import com.leori.enia.registry.application.RegisterDatasetUseCase;
 import com.leori.enia.registry.application.port.AIModelRepository;
+import com.leori.enia.registry.application.port.DatasetRepository;
 import com.leori.enia.registry.infrastructure.persistence.RegistryPersistenceConfiguration;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -61,6 +63,17 @@ public class RegistryApplicationConfiguration {
         return transactional(
                 new RegisterAIModelUseCase(systemRepository, modelRepository, clock),
                 RegisterAIModelUseCase.class
+        );
+    }
+
+    @Bean
+    RegisterDatasetUseCase registerDatasetUseCase(
+            DatasetRepository datasetRepository,
+            @Qualifier("registryClock") Clock clock
+    ) {
+        return transactional(
+                new RegisterDatasetUseCase(datasetRepository, clock),
+                RegisterDatasetUseCase.class
         );
     }
 

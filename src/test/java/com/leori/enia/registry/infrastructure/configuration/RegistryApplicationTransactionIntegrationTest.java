@@ -8,9 +8,15 @@ import com.leori.enia.governance.infrastructure.persistence.JpaAISystemRepositor
 import com.leori.enia.initiative.infrastructure.persistence.AIInitiativePersistenceConfiguration;
 import com.leori.enia.registry.application.RegisterAIModelCommand;
 import com.leori.enia.registry.application.RegisterAIModelUseCase;
+import com.leori.enia.registry.application.RegisterDatasetCommand;
+import com.leori.enia.registry.application.RegisterDatasetUseCase;
 import com.leori.enia.registry.application.port.AIModelRepository;
+import com.leori.enia.registry.application.port.DatasetRepository;
 import com.leori.enia.registry.domain.AIModel;
+import com.leori.enia.registry.domain.Dataset;
+import com.leori.enia.registry.domain.DatasetId;
 import com.leori.enia.registry.domain.event.AIModelRegistered;
+import com.leori.enia.registry.domain.event.DatasetRegistered;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -77,6 +83,12 @@ class RegistryApplicationTransactionIntegrationTest {
     private ObservedAIModelRepository models;
 
     @Autowired
+    private RegisterDatasetUseCase registerDataset;
+
+    @Autowired
+    private ObservedDatasetRepository datasets;
+
+    @Autowired
     private JdbcTemplate jdbc;
 
     @BeforeEach
@@ -84,6 +96,8 @@ class RegistryApplicationTransactionIntegrationTest {
         assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
         systems.reset();
         models.reset();
+        datasets.reset();
+        jdbc.update("delete from ai_datasets");
         jdbc.update("delete from ai_models");
         jdbc.update("delete from ai_systems");
         jdbc.update("delete from ai_initiatives");
@@ -138,6 +152,45 @@ class RegistryApplicationTransactionIntegrationTest {
         assertEquals(1, systems.finds);
         assertEquals(0, models.creates);
         assertEquals(0, rowCount());
+    }
+
+    @Test
+    void registers_independent_dataset_in_required_read_write_transaction() {
+        Dataset result = registerDataset.execute(new RegisterDatasetCommand(
+                "  Training data  ", "  Curated observations  "));
+
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+        assertNotNull(datasets.createTransaction);
+        assertEquals(1, datasets.creates);
+        assertEquals(0, systems.finds);
+        assertEquals(0, models.creates);
+        assertEquals(result.id(), datasets.flushedDatasetId);
+        assertEquals(1, jdbc.queryForObject("select count(*) from ai_datasets", Integer.class));
+        assertEquals("Training data", jdbc.queryForObject(
+                "select name from ai_datasets where id = ?", String.class, result.id().value()));
+        assertEquals("Curated observations", jdbc.queryForObject(
+                "select description from ai_datasets where id = ?", String.class, result.id().value()));
+        assertEquals(REGISTERED_AT, jdbc.queryForObject(
+                "select created_at from ai_datasets where id = ?", Timestamp.class, result.id().value()).toInstant());
+        assertEquals(REGISTERED_AT, result.createdAt());
+        assertEquals(1, result.domainEvents().size());
+        DatasetRegistered event = assertInstanceOf(DatasetRegistered.class, result.domainEvents().getFirst());
+        assertEquals(result.id(), event.datasetId());
+        assertEquals(result.createdAt(), event.occurredAt());
+    }
+
+    @Test
+    void rolls_back_dataset_insert_after_flush_without_leaking_transaction() {
+        datasets.failAfterFlush = true;
+
+        assertThrows(FailureAfterFlush.class,
+                () -> registerDataset.execute(new RegisterDatasetCommand("Dataset", "Description")));
+
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+        assertNotNull(datasets.createTransaction);
+        assertNotNull(datasets.flushedDatasetId);
+        assertEquals(1, datasets.creates);
+        assertEquals(0, jdbc.queryForObject("select count(*) from ai_datasets", Integer.class));
     }
 
     // ---------------------------------------------------------------------------
@@ -215,6 +268,16 @@ class RegistryApplicationTransactionIntegrationTest {
                 JdbcTemplate jdbc
         ) {
             return new ObservedAIModelRepository(delegate, entityManager, jdbc);
+        }
+
+        @Bean
+        @Primary
+        ObservedDatasetRepository observedDatasetRepository(
+                @Qualifier("datasetRepository") DatasetRepository delegate,
+                EntityManager entityManager,
+                JdbcTemplate jdbc
+        ) {
+            return new ObservedDatasetRepository(delegate, entityManager, jdbc);
         }
     }
 
@@ -310,6 +373,47 @@ class RegistryApplicationTransactionIntegrationTest {
             failAfterFlush = false;
             createTransaction = null;
             flushedSystemId = null;
+            creates = 0;
+        }
+    }
+
+    static class ObservedDatasetRepository implements DatasetRepository {
+        private final DatasetRepository delegate;
+        private final EntityManager entityManager;
+        private final JdbcTemplate jdbc;
+        private boolean failAfterFlush;
+        private Long createTransaction;
+        private DatasetId flushedDatasetId;
+        private int creates;
+
+        ObservedDatasetRepository(DatasetRepository delegate, EntityManager entityManager, JdbcTemplate jdbc) {
+            this.delegate = delegate;
+            this.entityManager = entityManager;
+            this.jdbc = jdbc;
+        }
+
+        @Override
+        public Dataset create(Dataset dataset) {
+            assertTrue(TransactionSynchronizationManager.isActualTransactionActive(),
+                    "Transaction must start before creating the dataset");
+            assertFalse(TransactionSynchronizationManager.isCurrentTransactionReadOnly());
+            createTransaction = jdbc.queryForObject("select txid_current()", Long.class);
+            creates++;
+            Dataset result = delegate.create(dataset);
+            entityManager.flush();
+            flushedDatasetId = dataset.id();
+            assertEquals(1, jdbc.queryForObject(
+                    "select count(*) from ai_datasets where id = ?", Integer.class, dataset.id().value()));
+            if (failAfterFlush) {
+                throw new FailureAfterFlush();
+            }
+            return result;
+        }
+
+        void reset() {
+            failAfterFlush = false;
+            createTransaction = null;
+            flushedDatasetId = null;
             creates = 0;
         }
     }
