@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -135,6 +136,11 @@ class RegisterDatasetUseCaseTest {
                 throw failure;
             }
             return dataset;
+        }
+
+        @Override
+        public Optional<Dataset> findById(com.leori.enia.registry.domain.DatasetId id) {
+            throw new AssertionError("Register use case must not find a dataset");
         }
     }
 }

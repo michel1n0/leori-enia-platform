@@ -141,6 +141,22 @@ class PostgreSQLDatasetPersistenceIntegrationTest {
     }
 
     @Test
+    void find_by_id_returns_committed_dataset_without_replaying_events() {
+        Dataset original = repository.create(dataset(DatasetId.generate()));
+
+        var result = repository.findById(original.id());
+
+        assertTrue(result.isPresent());
+        assertState(original, result.orElseThrow());
+        assertTrue(result.orElseThrow().domainEvents().isEmpty());
+    }
+
+    @Test
+    void find_by_id_returns_empty_when_missing() {
+        assertTrue(repository.findById(DatasetId.generate()).isEmpty());
+    }
+
+    @Test
     void joins_outer_transaction_and_rolls_back_an_already_flushed_insert() {
         Dataset input = dataset(DatasetId.generate());
 

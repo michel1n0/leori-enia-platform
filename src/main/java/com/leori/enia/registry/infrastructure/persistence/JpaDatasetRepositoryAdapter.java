@@ -2,9 +2,11 @@ package com.leori.enia.registry.infrastructure.persistence;
 
 import com.leori.enia.registry.application.port.DatasetRepository;
 import com.leori.enia.registry.domain.Dataset;
+import com.leori.enia.registry.domain.DatasetId;
 import jakarta.persistence.EntityManager;
 
 import java.util.Objects;
+import java.util.Optional;
 
 /** Transaction advice is supplied by RegistryPersistenceConfiguration. */
 public final class JpaDatasetRepositoryAdapter implements DatasetRepository {
@@ -24,5 +26,12 @@ public final class JpaDatasetRepositoryAdapter implements DatasetRepository {
         entityManager.persist(entity);
         entityManager.flush();
         return dataset;
+    }
+
+    @Override
+    public Optional<Dataset> findById(DatasetId id) {
+        Objects.requireNonNull(id, "Dataset id is required");
+        return Optional.ofNullable(entityManager.find(DatasetJpaEntity.class, id.value()))
+                .map(mapper::toDomain);
     }
 }

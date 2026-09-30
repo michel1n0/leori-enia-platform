@@ -6,6 +6,7 @@ import com.leori.enia.governance.domain.AISystem;
 import com.leori.enia.governance.domain.AISystemId;
 import com.leori.enia.governance.infrastructure.persistence.JpaAISystemRepositoryAdapter;
 import com.leori.enia.initiative.infrastructure.persistence.AIInitiativePersistenceConfiguration;
+import com.leori.enia.registry.application.GetDatasetUseCase;
 import com.leori.enia.registry.application.RegisterAIModelCommand;
 import com.leori.enia.registry.application.RegisterAIModelUseCase;
 import com.leori.enia.registry.application.RegisterDatasetCommand;
@@ -84,6 +85,9 @@ class RegistryApplicationTransactionIntegrationTest {
 
     @Autowired
     private RegisterDatasetUseCase registerDataset;
+
+    @Autowired
+    private GetDatasetUseCase getDataset;
 
     @Autowired
     private ObservedDatasetRepository datasets;
@@ -191,6 +195,23 @@ class RegistryApplicationTransactionIntegrationTest {
         assertNotNull(datasets.flushedDatasetId);
         assertEquals(1, datasets.creates);
         assertEquals(0, jdbc.queryForObject("select count(*) from ai_datasets", Integer.class));
+    }
+
+    @Test
+    void gets_dataset_in_required_transaction_without_writing() {
+        Dataset registered = registerDataset.execute(new RegisterDatasetCommand("Dataset", "Description"));
+        datasets.reset();
+
+        Dataset result = getDataset.execute(registered.id());
+
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+        assertEquals(registered.id(), result.id());
+        assertEquals(registered.name(), result.name());
+        assertEquals(registered.description(), result.description());
+        assertEquals(registered.createdAt(), result.createdAt());
+        assertNotNull(datasets.findTransaction);
+        assertEquals(1, datasets.finds);
+        assertEquals(0, datasets.creates);
     }
 
     // ---------------------------------------------------------------------------
@@ -383,8 +404,10 @@ class RegistryApplicationTransactionIntegrationTest {
         private final JdbcTemplate jdbc;
         private boolean failAfterFlush;
         private Long createTransaction;
+        private Long findTransaction;
         private DatasetId flushedDatasetId;
         private int creates;
+        private int finds;
 
         ObservedDatasetRepository(DatasetRepository delegate, EntityManager entityManager, JdbcTemplate jdbc) {
             this.delegate = delegate;
@@ -410,11 +433,23 @@ class RegistryApplicationTransactionIntegrationTest {
             return result;
         }
 
+        @Override
+        public Optional<Dataset> findById(DatasetId id) {
+            assertTrue(TransactionSynchronizationManager.isActualTransactionActive(),
+                    "Transaction must start before finding the dataset");
+            assertFalse(TransactionSynchronizationManager.isCurrentTransactionReadOnly());
+            findTransaction = jdbc.queryForObject("select txid_current()", Long.class);
+            finds++;
+            return delegate.findById(id);
+        }
+
         void reset() {
             failAfterFlush = false;
             createTransaction = null;
+            findTransaction = null;
             flushedDatasetId = null;
             creates = 0;
+            finds = 0;
         }
     }
 
