@@ -2,9 +2,11 @@ package com.leori.enia.risk.infrastructure.persistence;
 
 import com.leori.enia.risk.application.port.RiskAssessmentRepository;
 import com.leori.enia.risk.domain.RiskAssessment;
+import com.leori.enia.risk.domain.RiskAssessmentId;
 import jakarta.persistence.EntityManager;
 
 import java.util.Objects;
+import java.util.Optional;
 
 /** Transaction advice is supplied by RiskPersistenceConfiguration. */
 public final class JpaRiskAssessmentRepositoryAdapter implements RiskAssessmentRepository {
@@ -24,5 +26,12 @@ public final class JpaRiskAssessmentRepositoryAdapter implements RiskAssessmentR
         entityManager.persist(entity);
         entityManager.flush();
         return assessment;
+    }
+
+    @Override
+    public Optional<RiskAssessment> findById(RiskAssessmentId id) {
+        Objects.requireNonNull(id, "Risk assessment id is required");
+        return Optional.ofNullable(entityManager.find(RiskAssessmentJpaEntity.class, id.value()))
+                .map(mapper::toDomain);
     }
 }

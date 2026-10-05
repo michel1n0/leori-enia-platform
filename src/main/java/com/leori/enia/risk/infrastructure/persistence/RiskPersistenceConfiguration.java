@@ -35,8 +35,14 @@ public class RiskPersistenceConfiguration {
         RuleBasedTransactionAttribute attribute = new RuleBasedTransactionAttribute();
         attribute.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
         attribute.setRollbackRules(List.of(new RollbackRuleAttribute(Throwable.class)));
+        RuleBasedTransactionAttribute readOnlyAttribute = new RuleBasedTransactionAttribute();
+        readOnlyAttribute.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+        readOnlyAttribute.setReadOnly(true);
+        readOnlyAttribute.setRollbackRules(List.of(new RollbackRuleAttribute(Throwable.class)));
+
         NameMatchTransactionAttributeSource source = new NameMatchTransactionAttributeSource();
         source.addTransactionalMethod("create", attribute);
+        source.addTransactionalMethod("findById", readOnlyAttribute);
 
         TransactionInterceptor transactions = new TransactionInterceptor();
         transactions.setTransactionManager(transactionManager);

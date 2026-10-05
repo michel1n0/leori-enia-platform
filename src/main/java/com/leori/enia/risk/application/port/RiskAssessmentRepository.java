@@ -1,6 +1,9 @@
 package com.leori.enia.risk.application.port;
 
 import com.leori.enia.risk.domain.RiskAssessment;
+import com.leori.enia.risk.domain.RiskAssessmentId;
+
+import java.util.Optional;
 
 public interface RiskAssessmentRepository {
 
@@ -11,4 +14,8 @@ public interface RiskAssessmentRepository {
      * returning from a joined transaction does not imply that it has committed.
      */
     RiskAssessment create(RiskAssessment assessment);
+
+    default Optional<RiskAssessment> findById(RiskAssessmentId id) {
+        throw new UnsupportedOperationException("findById is not implemented");
+    }
 }

@@ -5,13 +5,17 @@ import com.leori.enia.governance.application.port.AISystemRepository;
 import com.leori.enia.governance.domain.AISystem;
 import com.leori.enia.governance.domain.AISystemId;
 import com.leori.enia.initiative.infrastructure.persistence.AIInitiativePersistenceConfiguration;
+import com.leori.enia.risk.application.GetRiskAssessmentUseCase;
 import com.leori.enia.risk.application.RecordRiskAssessmentCommand;
 import com.leori.enia.risk.application.RecordRiskAssessmentUseCase;
 import com.leori.enia.risk.application.RecordRiskFindingCommand;
 import com.leori.enia.risk.application.port.RiskAssessmentRepository;
 import com.leori.enia.risk.domain.ImpactMagnitude;
 import com.leori.enia.risk.domain.Likelihood;
+import com.leori.enia.risk.domain.ContextOfUse;
 import com.leori.enia.risk.domain.RiskAssessment;
+import com.leori.enia.risk.domain.RiskAssessmentId;
+import com.leori.enia.risk.domain.RiskFinding;
 import com.leori.enia.risk.domain.event.RiskAssessmentRecorded;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -73,6 +77,9 @@ class RiskApplicationTransactionIntegrationTest {
     private RecordRiskAssessmentUseCase record;
 
     @Autowired
+    private GetRiskAssessmentUseCase get;
+
+    @Autowired
     private ObservedAISystemRepository systems;
 
     @Autowired
@@ -127,6 +134,24 @@ class RiskApplicationTransactionIntegrationTest {
     }
 
     @Test
+    void gets_risk_assessment_in_one_read_only_transaction_without_writing() {
+        RiskAssessment assessment = assessments.delegate.create(assessment(seedSystem().id()));
+        assessments.reset();
+
+        RiskAssessment result = get.execute(assessment.id());
+
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+        assertEquals(assessment.id(), result.id());
+        assertEquals(assessment.systemId(), result.systemId());
+        assertEquals(assessment.findings(), result.findings());
+        assertEquals(0, assessments.creates);
+        assertEquals(1, assessments.finds);
+        assertTrue(assessments.findReadOnly);
+        assertEquals(1, assessmentRowCount());
+        assertEquals(3, findingRowCount());
+    }
+
+    @Test
     void missing_system_fails_before_risk_assessment_persistence() {
         AISystemId missingId = AISystemId.generate();
 
@@ -166,6 +191,20 @@ class RiskApplicationTransactionIntegrationTest {
                 """, systemId.value(), ORGANIZATION_UUID, initiativeId, Timestamp.from(SYSTEM_CREATED_AT));
         return systems.delegate.findById(systemId)
                 .orElseThrow(() -> new AssertionError("Seeded system not found: " + systemId));
+    }
+
+    private RiskAssessment assessment(AISystemId systemId) {
+        return RiskAssessment.builder()
+                .id(RiskAssessmentId.generate())
+                .systemId(systemId)
+                .contextOfUse(new ContextOfUse("Governance approval", "Public sector deployment"))
+                .findings(List.of(
+                        new RiskFinding("Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH),
+                        new RiskFinding("Privacy risk", Likelihood.LOW, ImpactMagnitude.MEDIUM),
+                        new RiskFinding("Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH)
+                ))
+                .assessedAt(ASSESSED_AT)
+                .build();
     }
 
     private RecordRiskAssessmentCommand command(AISystemId systemId) {
@@ -274,9 +313,12 @@ class RiskApplicationTransactionIntegrationTest {
         private final JdbcTemplate jdbc;
         private boolean failAfterFlush;
         private Long createTransaction;
+        private Long findTransaction;
+        private boolean findReadOnly;
         private com.leori.enia.risk.domain.RiskAssessmentId flushedAssessmentId;
         private AISystemId flushedSystemId;
         private int creates;
+        private int finds;
 
         ObservedRiskAssessmentRepository(
                 RiskAssessmentRepository delegate,
@@ -290,9 +332,17 @@ class RiskApplicationTransactionIntegrationTest {
 
         @Override
         public RiskAssessment create(RiskAssessment assessment) {
-            createTransaction = currentTransaction();
+            createTransaction = currentWriteTransaction();
             creates++;
             return observeWrite(assessment, () -> delegate.create(assessment));
+        }
+
+        @Override
+        public Optional<RiskAssessment> findById(RiskAssessmentId id) {
+            findTransaction = currentReadTransaction();
+            findReadOnly = TransactionSynchronizationManager.isCurrentTransactionReadOnly();
+            finds++;
+            return delegate.findById(id);
         }
 
         private RiskAssessment observeWrite(RiskAssessment assessment, Supplier<RiskAssessment> write) {
@@ -312,19 +362,29 @@ class RiskApplicationTransactionIntegrationTest {
             return result;
         }
 
-        private Long currentTransaction() {
+        private Long currentWriteTransaction() {
             assertTrue(TransactionSynchronizationManager.isActualTransactionActive(),
                     "Transaction must start before creating the risk assessment");
             assertFalse(TransactionSynchronizationManager.isCurrentTransactionReadOnly());
             return jdbc.queryForObject("select txid_current()", Long.class);
         }
 
+        private Long currentReadTransaction() {
+            assertTrue(TransactionSynchronizationManager.isActualTransactionActive(),
+                    "Transaction must start before finding the risk assessment");
+            assertTrue(TransactionSynchronizationManager.isCurrentTransactionReadOnly());
+            return jdbc.queryForObject("select txid_current()", Long.class);
+        }
+
         void reset() {
             failAfterFlush = false;
             createTransaction = null;
+            findTransaction = null;
+            findReadOnly = false;
             flushedAssessmentId = null;
             flushedSystemId = null;
             creates = 0;
+            finds = 0;
         }
     }
 

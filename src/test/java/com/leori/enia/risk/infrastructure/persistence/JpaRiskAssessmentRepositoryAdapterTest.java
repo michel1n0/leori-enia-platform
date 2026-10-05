@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -21,7 +22,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class JpaRiskAssessmentRepositoryAdapterTest {
 
@@ -45,8 +48,41 @@ class JpaRiskAssessmentRepositoryAdapterTest {
     }
 
     @Test
-    void rejects_null_before_accessing_persistence() {
+    void finds_existing_assessment_by_id() {
+        RiskAssessment assessment = assessment();
+        RiskAssessmentJpaEntity entity = new RiskAssessmentPersistenceMapper().toEntity(assessment);
+        when(entityManager.find(RiskAssessmentJpaEntity.class, assessment.id().value())).thenReturn(entity);
+
+        Optional<RiskAssessment> result = adapter.findById(assessment.id());
+
+        assertEquals(assessment.id(), result.orElseThrow().id());
+        assertEquals(assessment.systemId(), result.orElseThrow().systemId());
+        assertEquals(assessment.contextOfUse(), result.orElseThrow().contextOfUse());
+        assertEquals(assessment.findings(), result.orElseThrow().findings());
+        assertEquals(assessment.assessedAt(), result.orElseThrow().assessedAt());
+        assertEquals(List.of(), result.orElseThrow().domainEvents());
+        verify(entityManager).find(RiskAssessmentJpaEntity.class, assessment.id().value());
+    }
+
+    @Test
+    void returns_empty_when_assessment_is_missing() {
+        RiskAssessmentId id = RiskAssessmentId.generate();
+        when(entityManager.find(RiskAssessmentJpaEntity.class, id.value())).thenReturn(null);
+
+        assertEquals(Optional.empty(), adapter.findById(id));
+
+        verify(entityManager).find(RiskAssessmentJpaEntity.class, id.value());
+    }
+
+    @Test
+    void rejects_null_create_before_accessing_persistence() {
         assertThrows(NullPointerException.class, () -> adapter.create(null));
+        verifyNoInteractions(entityManager);
+    }
+
+    @Test
+    void rejects_null_find_before_accessing_persistence() {
+        assertThrows(NullPointerException.class, () -> adapter.findById(null));
         verifyNoInteractions(entityManager);
     }
 

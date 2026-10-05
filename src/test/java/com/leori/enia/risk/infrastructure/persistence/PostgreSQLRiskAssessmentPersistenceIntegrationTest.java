@@ -120,6 +120,29 @@ class PostgreSQLRiskAssessmentPersistenceIntegrationTest {
     }
 
     @Test
+    void finds_existing_assessment_by_id_rehydrating_complete_state_without_events() {
+        AISystemId systemId = seedSystem();
+        RiskAssessment input = repository.create(assessment(RiskAssessmentId.generate(), systemId));
+
+        RiskAssessment found = repository.findById(input.id()).orElseThrow();
+
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+        assertState(input, found);
+        assertEquals(input.findings(), found.findings());
+        assertEquals("Bias risk", found.findings().get(0).description());
+        assertEquals("Privacy risk", found.findings().get(1).description());
+        assertEquals("Bias risk", found.findings().get(2).description());
+        assertEquals(found.findings().get(0), found.findings().get(2));
+        assertTrue(found.domainEvents().isEmpty());
+    }
+
+    @Test
+    void returns_empty_when_assessment_is_missing() {
+        assertTrue(repository.findById(RiskAssessmentId.generate()).isEmpty());
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+    }
+
+    @Test
     void rejects_duplicate_id_without_overwriting() {
         AISystemId systemId = seedSystem();
         RiskAssessment original = repository.create(assessment(RiskAssessmentId.generate(), systemId));
