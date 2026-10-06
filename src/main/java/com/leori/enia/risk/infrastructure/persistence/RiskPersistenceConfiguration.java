@@ -1,6 +1,7 @@
 package com.leori.enia.risk.infrastructure.persistence;
 
 import com.leori.enia.risk.application.port.RiskAssessmentRepository;
+import com.leori.enia.risk.domain.ControlRepository;
 import jakarta.persistence.EntityManagerFactory;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.boot.autoconfigure.domain.EntityScan;
@@ -19,8 +20,8 @@ import java.util.List;
 
 /** Uses the existing JPA factory and transaction manager; callers must use the repository bean. */
 @Configuration(proxyBeanMethods = false)
-@EntityScan(basePackageClasses = RiskAssessmentJpaEntity.class)
-@Import(RiskAssessmentPersistenceMapper.class)
+@EntityScan(basePackageClasses = {RiskAssessmentJpaEntity.class, ControlJpaEntity.class})
+@Import({RiskAssessmentPersistenceMapper.class, ControlPersistenceMapper.class})
 public class RiskPersistenceConfiguration {
 
     @Bean
@@ -52,5 +53,31 @@ public class RiskPersistenceConfiguration {
         factory.setInterfaces(RiskAssessmentRepository.class);
         factory.addAdvice(transactions);
         return (RiskAssessmentRepository) factory.getProxy();
+    }
+
+    @Bean
+    ControlRepository controlRepository(
+            EntityManagerFactory entityManagerFactory,
+            PlatformTransactionManager transactionManager,
+            ControlPersistenceMapper mapper
+    ) {
+        var adapter = new JpaControlRepositoryAdapter(
+                SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory), mapper);
+
+        RuleBasedTransactionAttribute attribute = new RuleBasedTransactionAttribute();
+        attribute.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+        attribute.setRollbackRules(List.of(new RollbackRuleAttribute(Throwable.class)));
+
+        NameMatchTransactionAttributeSource source = new NameMatchTransactionAttributeSource();
+        source.addTransactionalMethod("create", attribute);
+
+        TransactionInterceptor transactions = new TransactionInterceptor();
+        transactions.setTransactionManager(transactionManager);
+        transactions.setTransactionAttributeSource(source);
+
+        ProxyFactory factory = new ProxyFactory(adapter);
+        factory.setInterfaces(ControlRepository.class);
+        factory.addAdvice(transactions);
+        return (ControlRepository) factory.getProxy();
     }
 }
