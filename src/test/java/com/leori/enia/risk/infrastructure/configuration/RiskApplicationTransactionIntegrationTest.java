@@ -16,6 +16,7 @@ import com.leori.enia.risk.domain.ContextOfUse;
 import com.leori.enia.risk.domain.RiskAssessment;
 import com.leori.enia.risk.domain.RiskAssessmentId;
 import com.leori.enia.risk.domain.RiskFinding;
+import com.leori.enia.risk.domain.RiskFindingId;
 import com.leori.enia.risk.domain.event.RiskAssessmentRecorded;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -199,9 +200,9 @@ class RiskApplicationTransactionIntegrationTest {
                 .systemId(systemId)
                 .contextOfUse(new ContextOfUse("Governance approval", "Public sector deployment"))
                 .findings(List.of(
-                        new RiskFinding("Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH),
-                        new RiskFinding("Privacy risk", Likelihood.LOW, ImpactMagnitude.MEDIUM),
-                        new RiskFinding("Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH)
+                        new RiskFinding(RiskFindingId.generate(), "Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH),
+                        new RiskFinding(RiskFindingId.generate(), "Privacy risk", Likelihood.LOW, ImpactMagnitude.MEDIUM),
+                        new RiskFinding(RiskFindingId.generate(), "Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH)
                 ))
                 .assessedAt(ASSESSED_AT)
                 .build();

@@ -109,7 +109,7 @@ class PostgreSQLAISystemPersistenceIntegrationTest {
         AISystem restored = reload(input.id());
         assertState(input, restored);
         assertTrue(restored.domainEvents().isEmpty());
-        assertEquals("7", flyway.info().current().getVersion().toString());
+        assertEquals("8", flyway.info().current().getVersion().toString());
         flyway.validate();
     }
 

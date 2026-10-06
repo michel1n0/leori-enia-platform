@@ -9,6 +9,7 @@ import com.leori.enia.risk.domain.Likelihood;
 import com.leori.enia.risk.domain.RiskAssessment;
 import com.leori.enia.risk.domain.RiskAssessmentId;
 import com.leori.enia.risk.domain.RiskFinding;
+import com.leori.enia.risk.domain.RiskFindingId;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -82,7 +83,7 @@ class GetRiskAssessmentUseCaseTest {
                 .id(RiskAssessmentId.generate())
                 .systemId(AISystemId.generate())
                 .contextOfUse(new ContextOfUse("Governance approval", "Public sector deployment"))
-                .findings(List.of(new RiskFinding("Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH)))
+                .findings(List.of(new RiskFinding(RiskFindingId.generate(), "Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH)))
                 .assessedAt(ASSESSED_AT)
                 .build();
     }

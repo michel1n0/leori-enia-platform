@@ -8,6 +8,7 @@ import com.leori.enia.risk.domain.ContextOfUse;
 import com.leori.enia.risk.domain.RiskAssessment;
 import com.leori.enia.risk.domain.RiskAssessmentId;
 import com.leori.enia.risk.domain.RiskFinding;
+import com.leori.enia.risk.domain.RiskFindingId;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -50,6 +51,7 @@ public class RecordRiskAssessmentUseCase {
                         .map(finding -> finding == null
                                 ? null
                                 : new RiskFinding(
+                                        RiskFindingId.generate(),
                                         finding.description(),
                                         finding.likelihood(),
                                         finding.impactMagnitude()

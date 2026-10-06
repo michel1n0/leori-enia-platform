@@ -24,6 +24,7 @@ public record RiskAssessmentResponse(
                 assessment.contextOfUse().deploymentContext(),
                 assessment.findings().stream()
                         .map(finding -> new RiskFindingResponse(
+                                finding.id().value(),
                                 finding.description(),
                                 finding.likelihood(),
                                 finding.impactMagnitude()
@@ -34,6 +35,7 @@ public record RiskAssessmentResponse(
     }
 
     public record RiskFindingResponse(
+            UUID id,
             String description,
             Likelihood likelihood,
             ImpactMagnitude impactMagnitude

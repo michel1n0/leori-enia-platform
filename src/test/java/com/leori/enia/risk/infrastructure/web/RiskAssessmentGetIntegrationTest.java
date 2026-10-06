@@ -38,6 +38,9 @@ class RiskAssessmentGetIntegrationTest {
     private static final Instant SYSTEM_CREATED_AT = Instant.parse("2026-09-25T14:00:00Z");
     private static final Instant ASSESSED_AT = Instant.parse("2026-10-01T14:00:00Z");
     private static final UUID ORGANIZATION_ID = UUID.fromString("30000000-0000-0000-0000-000000000001");
+    private static final UUID FIRST_FINDING_ID = UUID.fromString("40000000-0000-0000-0000-000000000001");
+    private static final UUID SECOND_FINDING_ID = UUID.fromString("40000000-0000-0000-0000-000000000002");
+    private static final UUID THIRD_FINDING_ID = UUID.fromString("40000000-0000-0000-0000-000000000003");
 
     @Container
     private static final PostgreSQLContainer<?> POSTGRESQL =
@@ -87,9 +90,9 @@ class RiskAssessmentGetIntegrationTest {
                 () -> assertEquals("Governance approval", body.get("purpose").asText()),
                 () -> assertEquals("Public sector deployment", body.get("deploymentContext").asText()),
                 () -> assertEquals(3, body.get("findings").size()),
-                () -> assertFinding(body.get("findings").get(0), "Bias risk", "MEDIUM", "HIGH"),
-                () -> assertFinding(body.get("findings").get(1), "Privacy risk", "LOW", "MEDIUM"),
-                () -> assertFinding(body.get("findings").get(2), "Bias risk", "MEDIUM", "HIGH"),
+                () -> assertFinding(body.get("findings").get(0), FIRST_FINDING_ID, "Bias risk", "MEDIUM", "HIGH"),
+                () -> assertFinding(body.get("findings").get(1), SECOND_FINDING_ID, "Privacy risk", "LOW", "MEDIUM"),
+                () -> assertFinding(body.get("findings").get(2), THIRD_FINDING_ID, "Bias risk", "MEDIUM", "HIGH"),
                 () -> assertEquals(ASSESSED_AT.toString(), body.get("assessedAt").asText()),
                 () -> assertNoInternalFields(body)
         );
@@ -147,19 +150,19 @@ class RiskAssessmentGetIntegrationTest {
                 """, assessmentId, systemId, Timestamp.from(ASSESSED_AT));
         jdbc.update("""
                 insert into risk_assessment_findings
-                    (risk_assessment_id, position, description, likelihood, impact_magnitude)
-                values (?, 0, 'Bias risk', 'MEDIUM', 'HIGH')
-                """, assessmentId);
+                    (id, risk_assessment_id, position, description, likelihood, impact_magnitude)
+                values (?, ?, 0, 'Bias risk', 'MEDIUM', 'HIGH')
+                """, FIRST_FINDING_ID, assessmentId);
         jdbc.update("""
                 insert into risk_assessment_findings
-                    (risk_assessment_id, position, description, likelihood, impact_magnitude)
-                values (?, 1, 'Privacy risk', 'LOW', 'MEDIUM')
-                """, assessmentId);
+                    (id, risk_assessment_id, position, description, likelihood, impact_magnitude)
+                values (?, ?, 1, 'Privacy risk', 'LOW', 'MEDIUM')
+                """, SECOND_FINDING_ID, assessmentId);
         jdbc.update("""
                 insert into risk_assessment_findings
-                    (risk_assessment_id, position, description, likelihood, impact_magnitude)
-                values (?, 2, 'Bias risk', 'MEDIUM', 'HIGH')
-                """, assessmentId);
+                    (id, risk_assessment_id, position, description, likelihood, impact_magnitude)
+                values (?, ?, 2, 'Bias risk', 'MEDIUM', 'HIGH')
+                """, THIRD_FINDING_ID, assessmentId);
         return assessmentId;
     }
 
@@ -173,7 +176,7 @@ class RiskAssessmentGetIntegrationTest {
 
     private void assertPersistedFindings(UUID assessmentId, List<Map<String, String>> expected) {
         List<Map<String, Object>> rows = jdbc.queryForList("""
-                select description, likelihood, impact_magnitude
+                select id, description, likelihood, impact_magnitude
                 from risk_assessment_findings
                 where risk_assessment_id = ?
                 order by position
@@ -182,6 +185,7 @@ class RiskAssessmentGetIntegrationTest {
         for (int index = 0; index < expected.size(); index++) {
             Map<String, String> finding = expected.get(index);
             Map<String, Object> row = rows.get(index);
+            assertEquals(List.of(FIRST_FINDING_ID, SECOND_FINDING_ID, THIRD_FINDING_ID).get(index), row.get("id"));
             assertEquals(finding.get("description"), row.get("description"));
             assertEquals(finding.get("likelihood"), row.get("likelihood"));
             assertEquals(finding.get("impactMagnitude"), row.get("impact_magnitude"));
@@ -196,7 +200,14 @@ class RiskAssessmentGetIntegrationTest {
         );
     }
 
-    private static void assertFinding(JsonNode node, String description, String likelihood, String impactMagnitude) {
+    private static void assertFinding(
+            JsonNode node,
+            UUID id,
+            String description,
+            String likelihood,
+            String impactMagnitude
+    ) {
+        assertEquals(id.toString(), node.get("id").asText());
         assertEquals(description, node.get("description").asText());
         assertEquals(likelihood, node.get("likelihood").asText());
         assertEquals(impactMagnitude, node.get("impactMagnitude").asText());

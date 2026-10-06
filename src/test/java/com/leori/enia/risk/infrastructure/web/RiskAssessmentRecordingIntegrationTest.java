@@ -112,6 +112,10 @@ class RiskAssessmentRecordingIntegrationTest {
                 () -> assertFinding(body.get("findings").get(0), "Bias risk", "MEDIUM", "HIGH"),
                 () -> assertFinding(body.get("findings").get(1), "Privacy risk", "LOW", "MEDIUM"),
                 () -> assertFinding(body.get("findings").get(2), "Bias risk", "MEDIUM", "HIGH"),
+                () -> assertEquals(3, Stream.of(0, 1, 2)
+                        .map(index -> body.get("findings").get(index).get("id").asText())
+                        .distinct()
+                        .count()),
                 () -> assertEquals(ASSESSED_AT.toString(), body.get("assessedAt").asText()),
                 () -> assertNoInternalFields(body)
         );
@@ -138,7 +142,7 @@ class RiskAssessmentRecordingIntegrationTest {
     }
 
     @Test
-    void response_has_exactly_six_fields_and_no_internal_fields() throws Exception {
+    void response_has_exactly_six_root_fields_and_no_internal_fields() throws Exception {
         UUID systemId = seedSystem();
 
         var result = postRequest(validRequest(systemId))
@@ -281,6 +285,16 @@ class RiskAssessmentRecordingIntegrationTest {
     }
 
     @Test
+    void rejects_client_provided_finding_id_as_malformed_request() throws Exception {
+        Map<String, Object> nested = finding("Bias risk", "MEDIUM", "HIGH");
+        nested.put("id", UUID.randomUUID().toString());
+        Map<String, Object> request = validRequest(seedSystem());
+        request.put("findings", List.of(nested));
+
+        assertMalformedRequest(request);
+    }
+
+    @Test
     void rejects_unknown_nested_properties_as_malformed_request() throws Exception {
         Map<String, Object> nested = finding("Bias risk", "MEDIUM", "HIGH");
         nested.put("score", 9);
@@ -388,7 +402,7 @@ class RiskAssessmentRecordingIntegrationTest {
 
     private void assertPersistedFindings(UUID assessmentId, List<Map<String, String>> expected) {
         List<Map<String, Object>> rows = jdbc.queryForList("""
-                select position, description, likelihood, impact_magnitude
+                select id, position, description, likelihood, impact_magnitude
                 from risk_assessment_findings
                 where risk_assessment_id = ?
                 order by position
@@ -401,6 +415,7 @@ class RiskAssessmentRecordingIntegrationTest {
             int expectedPosition = i;
             int position = ((Number) row.get("position")).intValue();
             assertAll(
+                    () -> assertNotNull(row.get("id")),
                     () -> assertEquals(expectedPosition, position),
                     () -> assertEquals(expectedFinding.get("description"), row.get("description")),
                     () -> assertEquals(expectedFinding.get("likelihood"), row.get("likelihood")),
@@ -436,7 +451,9 @@ class RiskAssessmentRecordingIntegrationTest {
             String impactMagnitude
     ) {
         assertAll(
-                () -> assertEquals(3, finding.size()),
+                () -> assertEquals(4, finding.size()),
+                () -> assertTrue(finding.get("id").isTextual()),
+                () -> assertNotNull(UUID.fromString(finding.get("id").asText())),
                 () -> assertEquals(description, finding.get("description").asText()),
                 () -> assertEquals(likelihood, finding.get("likelihood").asText()),
                 () -> assertEquals(impactMagnitude, finding.get("impactMagnitude").asText())

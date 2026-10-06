@@ -7,6 +7,7 @@ import com.leori.enia.risk.domain.Likelihood;
 import com.leori.enia.risk.domain.RiskAssessment;
 import com.leori.enia.risk.domain.RiskAssessmentId;
 import com.leori.enia.risk.domain.RiskFinding;
+import com.leori.enia.risk.domain.RiskFindingId;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -39,7 +40,8 @@ class RiskAssessmentPersistenceMapperTest {
                 () -> assertFinding(assessment.findings().get(0), entity.findings().get(0)),
                 () -> assertFinding(assessment.findings().get(1), entity.findings().get(1)),
                 () -> assertFinding(assessment.findings().get(2), entity.findings().get(2)),
-                () -> assertEquals(assessment.findings().get(0), assessment.findings().get(2)),
+                () -> assertEquals(assessment.findings().get(0).description(), assessment.findings().get(2).description()),
+                () -> assertTrue(!assessment.findings().get(0).id().equals(assessment.findings().get(2).id())),
                 () -> assertEquals(1, events.size()),
                 () -> assertEquals(events, assessment.domainEvents())
         );
@@ -54,11 +56,14 @@ class RiskAssessmentPersistenceMapperTest {
                 "  Governance approval  ",
                 "  Public sector deployment  ",
                 List.of(
-                        new RiskAssessmentFindingJpaEmbeddable(
+                        new RiskAssessmentFindingJpaEntity(
+                                original.findings().get(0).id().value(),
                                 "  Bias risk  ", Likelihood.MEDIUM, ImpactMagnitude.HIGH),
-                        new RiskAssessmentFindingJpaEmbeddable(
+                        new RiskAssessmentFindingJpaEntity(
+                                original.findings().get(1).id().value(),
                                 "Privacy risk", Likelihood.LOW, ImpactMagnitude.MEDIUM),
-                        new RiskAssessmentFindingJpaEmbeddable(
+                        new RiskAssessmentFindingJpaEntity(
+                                original.findings().get(2).id().value(),
                                 "  Bias risk  ", Likelihood.MEDIUM, ImpactMagnitude.HIGH)
                 ),
                 ASSESSED_AT);
@@ -71,11 +76,7 @@ class RiskAssessmentPersistenceMapperTest {
                 () -> assertEquals("Governance approval", restored.contextOfUse().purpose()),
                 () -> assertEquals("Public sector deployment", restored.contextOfUse().deploymentContext()),
                 () -> assertEquals(ASSESSED_AT, restored.assessedAt()),
-                () -> assertEquals(List.of(
-                        new RiskFinding("Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH),
-                        new RiskFinding("Privacy risk", Likelihood.LOW, ImpactMagnitude.MEDIUM),
-                        new RiskFinding("Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH)
-                ), restored.findings()),
+                () -> assertEquals(original.findings(), restored.findings()),
                 () -> assertTrue(restored.domainEvents().isEmpty())
         );
     }
@@ -86,8 +87,8 @@ class RiskAssessmentPersistenceMapperTest {
         var invalidPurpose = new RiskAssessmentJpaEntity(valid.id(), valid.systemId(), " \u2003 ",
                 valid.deploymentContext(), valid.findings(), valid.assessedAt());
         var invalidFinding = new RiskAssessmentJpaEntity(valid.id(), valid.systemId(), valid.purpose(),
-                valid.deploymentContext(), List.of(new RiskAssessmentFindingJpaEmbeddable(
-                " ", Likelihood.LOW, ImpactMagnitude.LOW)), valid.assessedAt());
+                valid.deploymentContext(), List.of(new RiskAssessmentFindingJpaEntity(
+                RiskFindingId.generate().value(), " ", Likelihood.LOW, ImpactMagnitude.LOW)), valid.assessedAt());
 
         assertEquals("Purpose is required",
                 assertThrows(IllegalArgumentException.class, () -> mapper.toDomain(invalidPurpose)).getMessage());
@@ -95,8 +96,9 @@ class RiskAssessmentPersistenceMapperTest {
                 assertThrows(IllegalArgumentException.class, () -> mapper.toDomain(invalidFinding)).getMessage());
     }
 
-    private void assertFinding(RiskFinding expected, RiskAssessmentFindingJpaEmbeddable actual) {
+    private void assertFinding(RiskFinding expected, RiskAssessmentFindingJpaEntity actual) {
         assertAll(
+                () -> assertEquals(expected.id().value(), actual.id()),
                 () -> assertEquals(expected.description(), actual.description()),
                 () -> assertEquals(expected.likelihood(), actual.likelihood()),
                 () -> assertEquals(expected.impactMagnitude(), actual.impactMagnitude())
@@ -109,9 +111,9 @@ class RiskAssessmentPersistenceMapperTest {
                 .systemId(AISystemId.generate())
                 .contextOfUse(new ContextOfUse("Governance approval", "Public sector deployment"))
                 .findings(List.of(
-                        new RiskFinding("Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH),
-                        new RiskFinding("Privacy risk", Likelihood.LOW, ImpactMagnitude.MEDIUM),
-                        new RiskFinding("Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH)
+                        new RiskFinding(RiskFindingId.generate(), "Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH),
+                        new RiskFinding(RiskFindingId.generate(), "Privacy risk", Likelihood.LOW, ImpactMagnitude.MEDIUM),
+                        new RiskFinding(RiskFindingId.generate(), "Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH)
                 ))
                 .assessedAt(ASSESSED_AT)
                 .build();

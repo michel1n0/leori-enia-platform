@@ -5,6 +5,7 @@ import com.leori.enia.risk.domain.ContextOfUse;
 import com.leori.enia.risk.domain.RiskAssessment;
 import com.leori.enia.risk.domain.RiskAssessmentId;
 import com.leori.enia.risk.domain.RiskFinding;
+import com.leori.enia.risk.domain.RiskFindingId;
 
 class RiskAssessmentPersistenceMapper {
 
@@ -15,7 +16,8 @@ class RiskAssessmentPersistenceMapper {
                 assessment.contextOfUse().purpose(),
                 assessment.contextOfUse().deploymentContext(),
                 assessment.findings().stream()
-                        .map(finding -> new RiskAssessmentFindingJpaEmbeddable(
+                        .map(finding -> new RiskAssessmentFindingJpaEntity(
+                                finding.id().value(),
                                 finding.description(),
                                 finding.likelihood(),
                                 finding.impactMagnitude()))
@@ -31,6 +33,7 @@ class RiskAssessmentPersistenceMapper {
                 new ContextOfUse(entity.purpose(), entity.deploymentContext()),
                 entity.findings().stream()
                         .map(finding -> new RiskFinding(
+                                new RiskFindingId(finding.id()),
                                 finding.description(),
                                 finding.likelihood(),
                                 finding.impactMagnitude()))

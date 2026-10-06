@@ -69,6 +69,9 @@ class RecordRiskAssessmentUseCaseTest {
                 ImpactMagnitude.MEDIUM,
                 ImpactMagnitude.HIGH
         ), result.findings().stream().map(finding -> finding.impactMagnitude()).toList());
+        assertEquals(3, result.findings().stream().map(finding -> finding.id()).distinct().count());
+        result.findings().forEach(finding -> assertNotNull(finding.id()));
+        assertNotEquals(result.findings().get(0).id(), result.findings().get(2).id());
         assertEquals(1, systemRepository.findCount);
         assertEquals(system.id(), systemRepository.lastFindId);
         assertEquals(1, assessmentRepository.createCount);
@@ -76,7 +79,7 @@ class RecordRiskAssessmentUseCaseTest {
     }
 
     @Test
-    void generated_risk_assessment_id_is_unique_per_call() {
+    void generated_ids_are_unique_per_recorded_assessment_and_finding() {
         AISystem system = registeredSystem();
         InMemoryAISystemRepository systemRepository = new InMemoryAISystemRepository(system);
         InMemoryRiskAssessmentRepository assessmentRepository = new InMemoryRiskAssessmentRepository();
@@ -90,6 +93,7 @@ class RecordRiskAssessmentUseCaseTest {
         assertNotNull(first.id());
         assertNotNull(second.id());
         assertNotEquals(first.id(), second.id());
+        assertNotEquals(first.findings().getFirst().id(), second.findings().getFirst().id());
     }
 
     @Test

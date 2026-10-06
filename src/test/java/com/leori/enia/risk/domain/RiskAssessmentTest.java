@@ -25,15 +25,25 @@ class RiskAssessmentTest {
             "  Credit eligibility  ",
             "  Production lending workflow  "
     );
-    private static final RiskFinding FIRST_FINDING = new RiskFinding(
+    private static final RiskFindingId FIRST_FINDING_ID =
+            RiskFindingId.of("10000000-0000-0000-0000-000000000001");
+    private static final RiskFindingId SECOND_FINDING_ID =
+            RiskFindingId.of("10000000-0000-0000-0000-000000000002");
+    private static final RiskFinding FIRST_FINDING = new RiskFinding(FIRST_FINDING_ID,
             "  Biased recommendations  ",
             Likelihood.MEDIUM,
             ImpactMagnitude.HIGH
     );
-    private static final RiskFinding SECOND_FINDING = new RiskFinding(
+    private static final RiskFinding SECOND_FINDING = new RiskFinding(SECOND_FINDING_ID,
             "  Insufficient explanation  ",
             Likelihood.LOW,
             ImpactMagnitude.MEDIUM
+    );
+    private static final RiskFinding DUPLICATE_CONTENT_FINDING = new RiskFinding(
+            RiskFindingId.of("10000000-0000-0000-0000-000000000003"),
+            "  Biased recommendations  ",
+            Likelihood.MEDIUM,
+            ImpactMagnitude.HIGH
     );
 
     @Test
@@ -52,14 +62,32 @@ class RiskAssessmentTest {
     }
 
     @Test
-    void should_defensively_copy_findings_and_preserve_order_and_duplicates() {
-        List<RiskFinding> source = new ArrayList<>(List.of(FIRST_FINDING, SECOND_FINDING, FIRST_FINDING));
+    void should_defensively_copy_findings_and_preserve_order_and_duplicate_content_with_distinct_ids() {
+        List<RiskFinding> source = new ArrayList<>(List.of(
+                FIRST_FINDING, SECOND_FINDING, DUPLICATE_CONTENT_FINDING));
         RiskAssessment assessment = validBuilder().findings(source).build();
 
         source.clear();
 
-        assertEquals(List.of(FIRST_FINDING, SECOND_FINDING, FIRST_FINDING), assessment.findings());
+        assertEquals(List.of(FIRST_FINDING, SECOND_FINDING, DUPLICATE_CONTENT_FINDING), assessment.findings());
+        assertEquals(assessment.findings().get(0).description(), assessment.findings().get(2).description());
+        assertTrue(!assessment.findings().get(0).id().equals(assessment.findings().get(2).id()));
         assertThrows(UnsupportedOperationException.class, () -> assessment.findings().add(SECOND_FINDING));
+    }
+
+    @Test
+    void should_reject_duplicate_finding_ids_when_recording() {
+        RiskFinding duplicateIdFinding = new RiskFinding(
+                FIRST_FINDING_ID,
+                "Different risk with reused id",
+                Likelihood.LOW,
+                ImpactMagnitude.LOW
+        );
+
+        var exception = assertThrows(IllegalArgumentException.class,
+                () -> validBuilder().findings(List.of(FIRST_FINDING, duplicateIdFinding)).build());
+
+        assertEquals("Risk finding ids must be unique within an assessment", exception.getMessage());
     }
 
     @Test
@@ -146,13 +174,30 @@ class RiskAssessmentTest {
 
     @Test
     void should_defensively_copy_findings_when_rehydrating() {
-        List<RiskFinding> source = new ArrayList<>(List.of(FIRST_FINDING, SECOND_FINDING, FIRST_FINDING));
+        List<RiskFinding> source = new ArrayList<>(List.of(
+                FIRST_FINDING, SECOND_FINDING, DUPLICATE_CONTENT_FINDING));
         RiskAssessment assessment = RiskAssessment.rehydrate(ASSESSMENT_ID, SYSTEM_ID, CONTEXT, source, ASSESSED_AT);
 
         source.clear();
 
-        assertEquals(List.of(FIRST_FINDING, SECOND_FINDING, FIRST_FINDING), assessment.findings());
+        assertEquals(List.of(FIRST_FINDING, SECOND_FINDING, DUPLICATE_CONTENT_FINDING), assessment.findings());
         assertTrue(assessment.domainEvents().isEmpty());
+    }
+
+    @Test
+    void should_reject_duplicate_finding_ids_when_rehydrating() {
+        RiskFinding duplicateIdFinding = new RiskFinding(
+                FIRST_FINDING_ID,
+                "Different persisted risk with reused id",
+                Likelihood.LOW,
+                ImpactMagnitude.LOW
+        );
+
+        var exception = assertThrows(IllegalArgumentException.class,
+                () -> RiskAssessment.rehydrate(ASSESSMENT_ID, SYSTEM_ID, CONTEXT,
+                        List.of(FIRST_FINDING, duplicateIdFinding), ASSESSED_AT));
+
+        assertEquals("Risk finding ids must be unique within an assessment", exception.getMessage());
     }
 
     @Test
@@ -203,8 +248,8 @@ class RiskAssessmentTest {
                 SYSTEM_ID,
                 new ContextOfUse("  Credit eligibility  ", "  Production lending workflow  "),
                 List.of(
-                        new RiskFinding("  Biased recommendations  ", Likelihood.MEDIUM, ImpactMagnitude.HIGH),
-                        new RiskFinding("  Insufficient explanation  ", Likelihood.LOW, ImpactMagnitude.MEDIUM)
+                        new RiskFinding(FIRST_FINDING_ID, "  Biased recommendations  ", Likelihood.MEDIUM, ImpactMagnitude.HIGH),
+                        new RiskFinding(SECOND_FINDING_ID, "  Insufficient explanation  ", Likelihood.LOW, ImpactMagnitude.MEDIUM)
                 ),
                 ASSESSED_AT
         );

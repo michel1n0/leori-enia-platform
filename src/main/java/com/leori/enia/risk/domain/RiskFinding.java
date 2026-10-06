@@ -2,9 +2,15 @@ package com.leori.enia.risk.domain;
 
 import java.util.Objects;
 
-public record RiskFinding(String description, Likelihood likelihood, ImpactMagnitude impactMagnitude) {
+public record RiskFinding(
+        RiskFindingId id,
+        String description,
+        Likelihood likelihood,
+        ImpactMagnitude impactMagnitude
+) {
 
     public RiskFinding {
+        Objects.requireNonNull(id, "Risk finding id is required");
         description = requireText(description, "Description is required");
         Objects.requireNonNull(likelihood, "Likelihood is required");
         Objects.requireNonNull(impactMagnitude, "Impact magnitude is required");

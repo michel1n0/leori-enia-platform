@@ -6,8 +6,10 @@ import com.leori.enia.shared.domain.DomainEvent;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /** A completed risk assessment for an AI system in a specific context of use. */
 public final class RiskAssessment {
@@ -71,9 +73,14 @@ public final class RiskAssessment {
             throw new IllegalArgumentException("At least one risk finding is required");
         }
         List<RiskFinding> normalized = new ArrayList<>(findings.size());
+        Set<RiskFindingId> findingIds = new HashSet<>();
         for (RiskFinding finding : findings) {
             Objects.requireNonNull(finding, "Risk finding is required");
+            if (!findingIds.add(finding.id())) {
+                throw new IllegalArgumentException("Risk finding ids must be unique within an assessment");
+            }
             normalized.add(new RiskFinding(
+                    finding.id(),
                     finding.description(),
                     finding.likelihood(),
                     finding.impactMagnitude()

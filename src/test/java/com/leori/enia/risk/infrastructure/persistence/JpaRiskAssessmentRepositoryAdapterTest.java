@@ -7,6 +7,7 @@ import com.leori.enia.risk.domain.Likelihood;
 import com.leori.enia.risk.domain.RiskAssessment;
 import com.leori.enia.risk.domain.RiskAssessmentId;
 import com.leori.enia.risk.domain.RiskFinding;
+import com.leori.enia.risk.domain.RiskFindingId;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceException;
 import org.junit.jupiter.api.Test;
@@ -107,7 +108,7 @@ class JpaRiskAssessmentRepositoryAdapterTest {
                 .id(RiskAssessmentId.generate())
                 .systemId(AISystemId.generate())
                 .contextOfUse(new ContextOfUse("Governance approval", "Public sector deployment"))
-                .findings(List.of(new RiskFinding("Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH)))
+                .findings(List.of(new RiskFinding(RiskFindingId.generate(), "Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH)))
                 .assessedAt(Instant.parse("2026-10-01T14:00:00.123456Z"))
                 .build();
     }

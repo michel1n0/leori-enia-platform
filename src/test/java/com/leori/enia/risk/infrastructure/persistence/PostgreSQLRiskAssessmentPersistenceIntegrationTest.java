@@ -10,6 +10,7 @@ import com.leori.enia.risk.domain.Likelihood;
 import com.leori.enia.risk.domain.RiskAssessment;
 import com.leori.enia.risk.domain.RiskAssessmentId;
 import com.leori.enia.risk.domain.RiskFinding;
+import com.leori.enia.risk.domain.RiskFindingId;
 import com.leori.enia.risk.domain.event.RiskAssessmentRecorded;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.PersistenceException;
@@ -115,7 +116,7 @@ class PostgreSQLRiskAssessmentPersistenceIntegrationTest {
         RiskAssessment restored = reload(input.id());
         assertState(input, restored);
         assertTrue(restored.domainEvents().isEmpty());
-        assertEquals("7", flyway.info().current().getVersion().toString());
+        assertEquals("8", flyway.info().current().getVersion().toString());
         flyway.validate();
     }
 
@@ -132,7 +133,8 @@ class PostgreSQLRiskAssessmentPersistenceIntegrationTest {
         assertEquals("Bias risk", found.findings().get(0).description());
         assertEquals("Privacy risk", found.findings().get(1).description());
         assertEquals("Bias risk", found.findings().get(2).description());
-        assertEquals(found.findings().get(0), found.findings().get(2));
+        assertEquals(found.findings().get(0).description(), found.findings().get(2).description());
+        assertTrue(!found.findings().get(0).id().equals(found.findings().get(2).id()));
         assertTrue(found.domainEvents().isEmpty());
     }
 
@@ -184,7 +186,7 @@ class PostgreSQLRiskAssessmentPersistenceIntegrationTest {
                 .id(RiskAssessmentId.generate())
                 .systemId(systemId)
                 .contextOfUse(new ContextOfUse("p".repeat(5000), "d".repeat(5000)))
-                .findings(List.of(new RiskFinding("f".repeat(5000), Likelihood.HIGH, ImpactMagnitude.HIGH)))
+                .findings(List.of(new RiskFinding(RiskFindingId.generate(), "f".repeat(5000), Likelihood.HIGH, ImpactMagnitude.HIGH)))
                 .assessedAt(ASSESSED_AT)
                 .build();
 
@@ -219,30 +221,30 @@ class PostgreSQLRiskAssessmentPersistenceIntegrationTest {
                 () -> assertThrows(DataIntegrityViolationException.class,
                         () -> jdbc.update("""
                                 insert into risk_assessment_findings
-                                    (risk_assessment_id, position, description, likelihood, impact_magnitude)
-                                values (?, -1, 'Invalid', 'LOW', 'LOW')
-                                """, original.id().value())),
+                                    (id, risk_assessment_id, position, description, likelihood, impact_magnitude)
+                                values (?, ?, -1, 'Invalid', 'LOW', 'LOW')
+                                """, UUID.randomUUID(), original.id().value())),
                 () -> assertThrows(DataIntegrityViolationException.class,
                         () -> jdbc.update("""
                                 insert into risk_assessment_findings
-                                    (risk_assessment_id, position, description, likelihood, impact_magnitude)
-                                values (?, 99, 'Invalid', 'IMPOSSIBLE', 'LOW')
-                                """, original.id().value())),
+                                    (id, risk_assessment_id, position, description, likelihood, impact_magnitude)
+                                values (?, ?, 99, 'Invalid', 'IMPOSSIBLE', 'LOW')
+                                """, UUID.randomUUID(), original.id().value())),
                 () -> assertThrows(DataIntegrityViolationException.class,
                         () -> jdbc.update("""
                                 insert into risk_assessment_findings
-                                    (risk_assessment_id, position, description, likelihood, impact_magnitude)
-                                values (?, 99, 'Invalid', 'LOW', 'CATASTROPHIC')
-                                """, original.id().value()))
+                                    (id, risk_assessment_id, position, description, likelihood, impact_magnitude)
+                                values (?, ?, 99, 'Invalid', 'LOW', 'CATASTROPHIC')
+                                """, UUID.randomUUID(), original.id().value()))
         );
         assertState(original, reload(original.id()));
     }
 
     @Test
-    void upgrades_v6_to_v7_preserving_existing_rows_and_creating_empty_risk_tables_with_named_constraints() {
+    void upgrades_v7_to_v8_backfilling_finding_identity_and_preserving_existing_rows() {
         String schema = "risk_upgrade";
         Flyway.configure().dataSource(POSTGRESQL.getJdbcUrl(), POSTGRESQL.getUsername(), POSTGRESQL.getPassword())
-                .schemas(schema).defaultSchema(schema).target("6").load().migrate();
+                .schemas(schema).defaultSchema(schema).target("7").load().migrate();
 
         UUID initiativeId = UUID.randomUUID();
         jdbc.update("""
@@ -265,24 +267,53 @@ class PostgreSQLRiskAssessmentPersistenceIntegrationTest {
                 insert into risk_upgrade.ai_datasets (id, name, description, created_at)
                 values (?, 'Dataset', 'Description', ?)
                 """, UUID.randomUUID(), Timestamp.from(ASSESSED_AT));
+        UUID assessmentId = UUID.randomUUID();
+        jdbc.update("""
+                insert into risk_upgrade.risk_assessments
+                    (id, system_id, purpose, deployment_context, assessed_at)
+                values (?, ?, 'Governance approval', 'Public sector deployment', ?)
+                """, assessmentId, systemId, Timestamp.from(ASSESSED_AT));
+        jdbc.update("""
+                insert into risk_upgrade.risk_assessment_findings
+                    (risk_assessment_id, position, description, likelihood, impact_magnitude)
+                values (?, 0, 'Bias risk', 'MEDIUM', 'HIGH')
+                """, assessmentId);
+        jdbc.update("""
+                insert into risk_upgrade.risk_assessment_findings
+                    (risk_assessment_id, position, description, likelihood, impact_magnitude)
+                values (?, 1, 'Bias risk', 'MEDIUM', 'HIGH')
+                """, assessmentId);
         var initiativesBefore = jdbc.queryForList("select * from risk_upgrade.ai_initiatives order by id");
         var systemsBefore = jdbc.queryForList("select * from risk_upgrade.ai_systems order by id");
         var modelsBefore = jdbc.queryForList("select * from risk_upgrade.ai_models order by id");
         var datasetsBefore = jdbc.queryForList("select * from risk_upgrade.ai_datasets order by id");
+        var assessmentsBefore = jdbc.queryForList("select * from risk_upgrade.risk_assessments order by id");
 
         Flyway upgrade = Flyway.configure()
                 .dataSource(POSTGRESQL.getJdbcUrl(), POSTGRESQL.getUsername(), POSTGRESQL.getPassword())
-                .schemas(schema).defaultSchema(schema).target("7").load();
+                .schemas(schema).defaultSchema(schema).target("8").load();
 
         assertEquals(1, upgrade.migrate().migrationsExecuted);
-        assertEquals("7", upgrade.info().current().getVersion().toString());
+        assertEquals("8", upgrade.info().current().getVersion().toString());
         upgrade.validate();
         assertEquals(initiativesBefore, jdbc.queryForList("select * from risk_upgrade.ai_initiatives order by id"));
         assertEquals(systemsBefore, jdbc.queryForList("select * from risk_upgrade.ai_systems order by id"));
         assertEquals(modelsBefore, jdbc.queryForList("select * from risk_upgrade.ai_models order by id"));
         assertEquals(datasetsBefore, jdbc.queryForList("select * from risk_upgrade.ai_datasets order by id"));
-        assertEquals(0, jdbc.queryForObject("select count(*) from risk_upgrade.risk_assessments", Integer.class));
-        assertEquals(0, jdbc.queryForObject("select count(*) from risk_upgrade.risk_assessment_findings", Integer.class));
+        assertEquals(assessmentsBefore, jdbc.queryForList("select * from risk_upgrade.risk_assessments order by id"));
+        List<Map<String, Object>> findings = jdbc.queryForList("""
+                select id, risk_assessment_id, position, description, likelihood, impact_magnitude
+                from risk_upgrade.risk_assessment_findings
+                order by position
+                """);
+        assertEquals(2, findings.size());
+        assertNotNull(findings.get(0).get("id"));
+        assertNotNull(findings.get(1).get("id"));
+        assertTrue(!findings.get(0).get("id").equals(findings.get(1).get("id")));
+        assertEquals(assessmentId, findings.get(0).get("risk_assessment_id"));
+        assertEquals(0, findings.get(0).get("position"));
+        assertEquals(1, findings.get(1).get("position"));
+        assertEquals("Bias risk", findings.get(0).get("description"));
         assertRiskTableShape(schema);
     }
 
@@ -309,9 +340,9 @@ class PostgreSQLRiskAssessmentPersistenceIntegrationTest {
                 .systemId(systemId)
                 .contextOfUse(new ContextOfUse("Governance approval", "Public sector deployment"))
                 .findings(List.of(
-                        new RiskFinding("Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH),
-                        new RiskFinding("Privacy risk", Likelihood.LOW, ImpactMagnitude.MEDIUM),
-                        new RiskFinding("Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH)
+                        new RiskFinding(RiskFindingId.generate(), "Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH),
+                        new RiskFinding(RiskFindingId.generate(), "Privacy risk", Likelihood.LOW, ImpactMagnitude.MEDIUM),
+                        new RiskFinding(RiskFindingId.generate(), "Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH)
                 ))
                 .assessedAt(ASSESSED_AT)
                 .build();
@@ -361,7 +392,7 @@ class PostgreSQLRiskAssessmentPersistenceIntegrationTest {
 
     private void assertFindingRows(RiskAssessment expected) {
         List<Map<String, Object>> rows = jdbc.queryForList("""
-                select position, description, likelihood, impact_magnitude
+                select id, position, description, likelihood, impact_magnitude
                 from risk_assessment_findings
                 where risk_assessment_id = ?
                 order by position
@@ -372,6 +403,7 @@ class PostgreSQLRiskAssessmentPersistenceIntegrationTest {
             RiskFinding finding = expected.findings().get(position);
             Map<String, Object> row = rows.get(position);
             assertAll(
+                    () -> assertEquals(finding.id().value(), row.get("id")),
                     () -> assertEquals(position, row.get("position")),
                     () -> assertEquals(finding.description(), row.get("description")),
                     () -> assertEquals(finding.likelihood().name(), row.get("likelihood")),
@@ -404,10 +436,12 @@ class PostgreSQLRiskAssessmentPersistenceIntegrationTest {
         assertTrue(findingConstraints.containsAll(Set.of(
                 "pk_risk_assessment_findings",
                 "fk_risk_assessment_findings_assessment",
+                "uq_risk_assessment_findings_assessment_position",
                 "ck_risk_assessment_findings_position",
                 "ck_risk_assessment_findings_likelihood",
                 "ck_risk_assessment_findings_impact_magnitude")));
-        assertEquals(Set.of("pk_risk_assessments", "pk_risk_assessment_findings"),
+        assertEquals(Set.of("pk_risk_assessments", "pk_risk_assessment_findings",
+                        "uq_risk_assessment_findings_assessment_position"),
                 Set.copyOf(jdbc.queryForList("""
                         select indexname from pg_indexes
                         where schemaname = ?
