@@ -5,11 +5,15 @@ import com.leori.enia.governance.application.port.AISystemRepository;
 import com.leori.enia.governance.domain.AISystem;
 import com.leori.enia.governance.domain.AISystemId;
 import com.leori.enia.initiative.infrastructure.persistence.AIInitiativePersistenceConfiguration;
+import com.leori.enia.risk.application.DefineControlCommand;
+import com.leori.enia.risk.application.DefineControlUseCase;
 import com.leori.enia.risk.application.GetRiskAssessmentUseCase;
 import com.leori.enia.risk.application.RecordRiskAssessmentCommand;
 import com.leori.enia.risk.application.RecordRiskAssessmentUseCase;
 import com.leori.enia.risk.application.RecordRiskFindingCommand;
 import com.leori.enia.risk.application.port.RiskAssessmentRepository;
+import com.leori.enia.risk.domain.Control;
+import com.leori.enia.risk.domain.ControlRepository;
 import com.leori.enia.risk.domain.ImpactMagnitude;
 import com.leori.enia.risk.domain.Likelihood;
 import com.leori.enia.risk.domain.ContextOfUse;
@@ -17,6 +21,7 @@ import com.leori.enia.risk.domain.RiskAssessment;
 import com.leori.enia.risk.domain.RiskAssessmentId;
 import com.leori.enia.risk.domain.RiskFinding;
 import com.leori.enia.risk.domain.RiskFindingId;
+import com.leori.enia.risk.domain.event.ControlDefined;
 import com.leori.enia.risk.domain.event.RiskAssessmentRecorded;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -81,10 +86,16 @@ class RiskApplicationTransactionIntegrationTest {
     private GetRiskAssessmentUseCase get;
 
     @Autowired
+    private DefineControlUseCase define;
+
+    @Autowired
     private ObservedAISystemRepository systems;
 
     @Autowired
     private ObservedRiskAssessmentRepository assessments;
+
+    @Autowired
+    private ObservedControlRepository controls;
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -94,6 +105,8 @@ class RiskApplicationTransactionIntegrationTest {
         assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
         systems.reset();
         assessments.reset();
+        controls.reset();
+        jdbc.update("delete from controls");
         jdbc.update("delete from risk_assessment_findings");
         jdbc.update("delete from risk_assessments");
         jdbc.update("delete from ai_systems");
@@ -153,6 +166,46 @@ class RiskApplicationTransactionIntegrationTest {
     }
 
     @Test
+    void defines_control_for_existing_finding_in_one_required_write_transaction() {
+        RiskAssessment assessment = assessments.delegate.create(assessment(seedSystem().id()));
+        assessments.reset();
+        controls.reset();
+        RiskFindingId findingId = assessment.findings().getFirst().id();
+
+        Control result = define.execute(defineCommand(assessment.id(), findingId));
+
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+        assertDefineSingleTransaction();
+        assertEquals(1, assessments.finds);
+        assertFalse(assessments.findReadOnly);
+        assertEquals(1, controls.creates);
+        assertEquals(1, controlRowCount());
+        assertEquals(assessment.id(), result.riskAssessmentId());
+        assertEquals(findingId, result.riskFindingId());
+        assertEquals(ASSESSED_AT, result.createdAt());
+        assertEquals(1, result.domainEvents().size());
+        assertInstanceOf(ControlDefined.class, result.domainEvents().getFirst());
+    }
+
+    @Test
+    void rolls_back_control_flushed_inside_define_transaction() {
+        RiskAssessment assessment = assessments.delegate.create(assessment(seedSystem().id()));
+        assessments.reset();
+        controls.reset();
+        controls.failAfterFlush = true;
+        RiskFindingId findingId = assessment.findings().getFirst().id();
+
+        assertThrows(FailureAfterFlush.class, () -> define.execute(defineCommand(assessment.id(), findingId)));
+
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+        assertDefineSingleTransaction();
+        assertEquals(0, controlRowCount());
+        assertNotNull(controls.flushedControlId);
+        assertEquals(assessment.id(), controls.flushedAssessmentId);
+        assertEquals(findingId, controls.flushedFindingId);
+    }
+
+    @Test
     void missing_system_fails_before_risk_assessment_persistence() {
         AISystemId missingId = AISystemId.generate();
 
@@ -174,6 +227,13 @@ class RiskApplicationTransactionIntegrationTest {
         assertNotNull(assessments.createTransaction);
         assertEquals(systems.findTransaction, assessments.createTransaction,
                 "System findById and risk assessment create must run in the same PostgreSQL transaction");
+    }
+
+    private void assertDefineSingleTransaction() {
+        assertNotNull(assessments.findTransaction);
+        assertNotNull(controls.createTransaction);
+        assertEquals(assessments.findTransaction, controls.createTransaction,
+                "Risk assessment findById and control create must run in the same PostgreSQL transaction");
     }
 
     private AISystem seedSystem() {
@@ -206,6 +266,15 @@ class RiskApplicationTransactionIntegrationTest {
                 ))
                 .assessedAt(ASSESSED_AT)
                 .build();
+    }
+
+    private DefineControlCommand defineCommand(RiskAssessmentId assessmentId, RiskFindingId findingId) {
+        return new DefineControlCommand(
+                assessmentId,
+                findingId,
+                "Human review gate",
+                "Require documented human approval before deployment."
+        );
     }
 
     private RecordRiskAssessmentCommand command(AISystemId systemId) {
@@ -242,6 +311,10 @@ class RiskApplicationTransactionIntegrationTest {
         return jdbc.queryForObject("select count(*) from risk_assessment_findings", Integer.class);
     }
 
+    private int controlRowCount() {
+        return jdbc.queryForObject("select count(*) from controls", Integer.class);
+    }
+
     @Configuration(proxyBeanMethods = false)
     @EnableAutoConfiguration
     @Import({RiskApplicationConfiguration.class, AIInitiativePersistenceConfiguration.class})
@@ -269,6 +342,16 @@ class RiskApplicationTransactionIntegrationTest {
                 JdbcTemplate jdbc
         ) {
             return new ObservedRiskAssessmentRepository(delegate, entityManager, jdbc);
+        }
+
+        @Bean
+        @Primary
+        ObservedControlRepository observedControlRepository(
+                @Qualifier("controlRepository") ControlRepository delegate,
+                EntityManager entityManager,
+                JdbcTemplate jdbc
+        ) {
+            return new ObservedControlRepository(delegate, entityManager, jdbc);
         }
     }
 
@@ -340,7 +423,7 @@ class RiskApplicationTransactionIntegrationTest {
 
         @Override
         public Optional<RiskAssessment> findById(RiskAssessmentId id) {
-            findTransaction = currentReadTransaction();
+            findTransaction = currentTransaction("Transaction must start before finding the risk assessment");
             findReadOnly = TransactionSynchronizationManager.isCurrentTransactionReadOnly();
             finds++;
             return delegate.findById(id);
@@ -370,10 +453,8 @@ class RiskApplicationTransactionIntegrationTest {
             return jdbc.queryForObject("select txid_current()", Long.class);
         }
 
-        private Long currentReadTransaction() {
-            assertTrue(TransactionSynchronizationManager.isActualTransactionActive(),
-                    "Transaction must start before finding the risk assessment");
-            assertTrue(TransactionSynchronizationManager.isCurrentTransactionReadOnly());
+        private Long currentTransaction(String message) {
+            assertTrue(TransactionSynchronizationManager.isActualTransactionActive(), message);
             return jdbc.queryForObject("select txid_current()", Long.class);
         }
 
@@ -386,6 +467,61 @@ class RiskApplicationTransactionIntegrationTest {
             flushedSystemId = null;
             creates = 0;
             finds = 0;
+        }
+    }
+
+    static class ObservedControlRepository implements ControlRepository {
+        private final ControlRepository delegate;
+        private final EntityManager entityManager;
+        private final JdbcTemplate jdbc;
+        private boolean failAfterFlush;
+        private Long createTransaction;
+        private com.leori.enia.risk.domain.ControlId flushedControlId;
+        private RiskAssessmentId flushedAssessmentId;
+        private RiskFindingId flushedFindingId;
+        private int creates;
+
+        ObservedControlRepository(
+                ControlRepository delegate,
+                EntityManager entityManager,
+                JdbcTemplate jdbc
+        ) {
+            this.delegate = delegate;
+            this.entityManager = entityManager;
+            this.jdbc = jdbc;
+        }
+
+        @Override
+        public Control create(Control control) {
+            createTransaction = currentWriteTransaction();
+            creates++;
+            Control result = delegate.create(control);
+            entityManager.flush();
+            flushedControlId = control.id();
+            flushedAssessmentId = control.riskAssessmentId();
+            flushedFindingId = control.riskFindingId();
+            assertEquals(1, jdbc.queryForObject(
+                    "select count(*) from controls where id = ?", Integer.class, control.id().value()));
+            if (failAfterFlush) {
+                throw new FailureAfterFlush();
+            }
+            return result;
+        }
+
+        private Long currentWriteTransaction() {
+            assertTrue(TransactionSynchronizationManager.isActualTransactionActive(),
+                    "Transaction must start before creating the control");
+            assertFalse(TransactionSynchronizationManager.isCurrentTransactionReadOnly());
+            return jdbc.queryForObject("select txid_current()", Long.class);
+        }
+
+        void reset() {
+            failAfterFlush = false;
+            createTransaction = null;
+            flushedControlId = null;
+            flushedAssessmentId = null;
+            flushedFindingId = null;
+            creates = 0;
         }
     }
 

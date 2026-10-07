@@ -11,6 +11,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -73,6 +74,30 @@ class RiskAssessmentTest {
         assertEquals(assessment.findings().get(0).description(), assessment.findings().get(2).description());
         assertTrue(!assessment.findings().get(0).id().equals(assessment.findings().get(2).id()));
         assertThrows(UnsupportedOperationException.class, () -> assessment.findings().add(SECOND_FINDING));
+    }
+
+    @Test
+    void should_report_existing_finding_membership_by_id() {
+        RiskAssessment assessment = validBuilder().build();
+
+        assertTrue(assessment.containsFinding(FIRST_FINDING_ID));
+    }
+
+    @Test
+    void should_report_missing_finding_membership_by_id() {
+        RiskAssessment assessment = validBuilder().build();
+
+        assertFalse(assessment.containsFinding(RiskFindingId.generate()));
+    }
+
+    @Test
+    void should_require_finding_id_when_checking_membership() {
+        RiskAssessment assessment = validBuilder().build();
+
+        NullPointerException exception = assertThrows(NullPointerException.class,
+                () -> assessment.containsFinding(null));
+
+        assertEquals("Risk finding id is required", exception.getMessage());
     }
 
     @Test

@@ -2,9 +2,11 @@ package com.leori.enia.risk.infrastructure.configuration;
 
 import com.leori.enia.governance.application.port.AISystemRepository;
 import com.leori.enia.governance.infrastructure.persistence.GovernancePersistenceConfiguration;
+import com.leori.enia.risk.application.DefineControlUseCase;
 import com.leori.enia.risk.application.GetRiskAssessmentUseCase;
 import com.leori.enia.risk.application.RecordRiskAssessmentUseCase;
 import com.leori.enia.risk.application.port.RiskAssessmentRepository;
+import com.leori.enia.risk.domain.ControlRepository;
 import com.leori.enia.risk.infrastructure.persistence.RiskPersistenceConfiguration;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -82,6 +84,18 @@ public class RiskApplicationConfiguration {
         return readOnlyTransactional(
                 new GetRiskAssessmentUseCase(assessmentRepository),
                 GetRiskAssessmentUseCase.class
+        );
+    }
+
+    @Bean
+    DefineControlUseCase defineControlUseCase(
+            RiskAssessmentRepository assessmentRepository,
+            ControlRepository controlRepository,
+            @Qualifier("riskClock") Clock clock
+    ) {
+        return transactional(
+                new DefineControlUseCase(assessmentRepository, controlRepository, clock),
+                DefineControlUseCase.class
         );
     }
 

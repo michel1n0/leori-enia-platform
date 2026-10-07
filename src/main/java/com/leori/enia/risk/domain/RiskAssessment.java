@@ -105,6 +105,11 @@ public final class RiskAssessment {
         return findings;
     }
 
+    public boolean containsFinding(RiskFindingId findingId) {
+        Objects.requireNonNull(findingId, "Risk finding id is required");
+        return findings.stream().anyMatch(finding -> finding.id().equals(findingId));
+    }
+
     public Instant assessedAt() {
         return assessedAt;
     }
