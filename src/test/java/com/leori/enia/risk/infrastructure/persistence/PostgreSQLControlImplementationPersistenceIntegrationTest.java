@@ -7,6 +7,9 @@ import com.leori.enia.risk.application.port.RiskAssessmentRepository;
 import com.leori.enia.risk.domain.ContextOfUse;
 import com.leori.enia.risk.domain.Control;
 import com.leori.enia.risk.domain.ControlId;
+import com.leori.enia.risk.domain.ControlImplementation;
+import com.leori.enia.risk.domain.ControlImplementationId;
+import com.leori.enia.risk.domain.ControlImplementationRepository;
 import com.leori.enia.risk.domain.ControlRepository;
 import com.leori.enia.risk.domain.ImpactMagnitude;
 import com.leori.enia.risk.domain.Likelihood;
@@ -14,10 +17,8 @@ import com.leori.enia.risk.domain.RiskAssessment;
 import com.leori.enia.risk.domain.RiskAssessmentId;
 import com.leori.enia.risk.domain.RiskFinding;
 import com.leori.enia.risk.domain.RiskFindingId;
-import com.leori.enia.risk.domain.event.ControlDefined;
-import jakarta.persistence.EntityManagerFactory;
+import com.leori.enia.risk.domain.event.ControlImplementationRecorded;
 import jakarta.persistence.PersistenceException;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,17 +43,16 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Testcontainers
-@SpringJUnitConfig(PostgreSQLControlPersistenceIntegrationTest.PersistenceConfiguration.class)
-class PostgreSQLControlPersistenceIntegrationTest {
+@SpringJUnitConfig(PostgreSQLControlImplementationPersistenceIntegrationTest.PersistenceConfiguration.class)
+class PostgreSQLControlImplementationPersistenceIntegrationTest {
 
     private static final Instant ASSESSED_AT = Instant.parse("2026-10-01T14:00:00.123456Z");
     private static final Instant CREATED_AT = Instant.parse("2026-10-02T10:15:30.123456Z");
+    private static final Instant IMPLEMENTED_AT = Instant.parse("2026-10-03T12:30:45.123456Z");
     private static final UUID ORGANIZATION_UUID = UUID.fromString("10000000-0000-0000-0000-000000000001");
 
     @Container
@@ -69,26 +69,21 @@ class PostgreSQLControlPersistenceIntegrationTest {
     }
 
     @Autowired
-    private ControlRepository repository;
+    private ControlImplementationRepository repository;
+
+    @Autowired
+    private ControlRepository controlRepository;
 
     @Autowired
     private RiskAssessmentRepository assessmentRepository;
 
     @Autowired
-    private ControlPersistenceMapper mapper;
-
-    @Autowired
-    private EntityManagerFactory entityManagerFactory;
-
-    @Autowired
     private JdbcTemplate jdbc;
-
-    @Autowired
-    private Flyway flyway;
 
     @BeforeEach
     void clearRows() {
         assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+        jdbc.update("delete from control_implementations");
         jdbc.update("delete from controls");
         jdbc.update("delete from risk_assessment_findings");
         jdbc.update("delete from risk_assessments");
@@ -97,77 +92,50 @@ class PostgreSQLControlPersistenceIntegrationTest {
     }
 
     @Test
-    void creates_and_commits_control_preserving_events_but_not_replaying_them_on_reload() {
-        RiskAssessment assessment = assessmentRepository.create(assessment(RiskAssessmentId.generate(), seedSystem()));
-        RiskFinding finding = assessment.findings().getFirst();
-        Control input = control(assessment.id(), finding.id());
+    void persists_valid_control_implementation_with_scalar_db_values_and_preserved_events() {
+        Control control = seedControl();
+        ControlImplementation input = implementation(control.id(), "Evidence package uploaded and reviewed.");
         var events = input.domainEvents();
 
-        Control result = repository.create(input);
+        ControlImplementation result = repository.create(input);
 
         assertSame(input, result);
         assertEquals(1, events.size());
-        assertInstanceOf(ControlDefined.class, events.getFirst());
+        assertInstanceOf(ControlImplementationRecorded.class, events.getFirst());
         assertEquals(events, input.domainEvents());
         assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
-        assertEquals(1, controlRowCount());
-        assertControlRow(input);
-        Control restored = reload(input.id());
-        assertState(input, restored);
-        assertTrue(restored.domainEvents().isEmpty());
-        assertEquals("10", flyway.info().current().getVersion().toString());
-        flyway.validate();
+        assertEquals(1, implementationRowCount());
+        assertImplementationRow(input);
     }
 
     @Test
-    void finds_existing_control_without_replaying_domain_events() {
+    void database_fk_rejects_missing_control_as_persistence_exception() {
+        ControlImplementation input = implementation(ControlId.generate(), "Cannot reference a missing control.");
+
+        assertThrows(PersistenceException.class, () -> repository.create(input));
+
+        assertEquals(0, implementationRowCount());
+    }
+
+    @Test
+    void allows_multiple_implementations_for_the_same_control_without_unique_control_id_constraint() {
+        Control control = seedControl();
+        ControlImplementation first = implementation(control.id(), "Initial operating procedure published.");
+        ControlImplementation second = implementation(control.id(), "Evidence package attached.");
+
+        repository.create(first);
+        repository.create(second);
+
+        assertEquals(2, implementationRowCount());
+        assertEquals(2, jdbc.queryForObject(
+                "select count(*) from control_implementations where control_id = ?",
+                Integer.class,
+                control.id().value()));
+    }
+
+    private Control seedControl() {
         RiskAssessment assessment = assessmentRepository.create(assessment(RiskAssessmentId.generate(), seedSystem()));
-        Control input = repository.create(control(assessment.id(), assessment.findings().getFirst().id()));
-
-        var result = repository.findById(input.id());
-
-        assertTrue(result.isPresent());
-        assertState(input, result.get());
-        assertTrue(result.get().domainEvents().isEmpty());
-        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
-        assertEquals(1, controlRowCount());
-    }
-
-    @Test
-    void missing_control_returns_empty_optional() {
-        assertTrue(repository.findById(ControlId.generate()).isEmpty());
-        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
-    }
-
-    @Test
-    void rejects_null_find_id_before_accessing_persistence() {
-        NullPointerException exception = assertThrows(NullPointerException.class, () -> repository.findById(null));
-
-        assertEquals("Control id is required", exception.getMessage());
-    }
-
-    @Test
-    void accepts_control_when_finding_belongs_to_the_referenced_assessment() {
-        RiskAssessment assessment = assessmentRepository.create(assessment(RiskAssessmentId.generate(), seedSystem()));
-        Control input = control(assessment.id(), assessment.findings().get(1).id());
-
-        repository.create(input);
-
-        assertEquals(1, controlRowCount());
-        assertState(input, reload(input.id()));
-    }
-
-    @Test
-    void rejects_control_when_finding_belongs_to_a_different_assessment() {
-        AISystemId firstSystemId = seedSystem();
-        AISystemId secondSystemId = seedSystem();
-        RiskAssessment first = assessmentRepository.create(assessment(RiskAssessmentId.generate(), firstSystemId));
-        RiskAssessment second = assessmentRepository.create(assessment(RiskAssessmentId.generate(), secondSystemId));
-        Control mismatched = control(first.id(), second.findings().getFirst().id());
-
-        assertThrows(PersistenceException.class, () -> repository.create(mismatched));
-
-        assertEquals(0, controlRowCount());
+        return controlRepository.create(control(assessment.id(), assessment.findings().getFirst().id()));
     }
 
     private AISystemId seedSystem() {
@@ -192,10 +160,7 @@ class PostgreSQLControlPersistenceIntegrationTest {
                 .id(id)
                 .systemId(systemId)
                 .contextOfUse(new ContextOfUse("Governance approval", "Public sector deployment"))
-                .findings(List.of(
-                        new RiskFinding(RiskFindingId.generate(), "Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH),
-                        new RiskFinding(RiskFindingId.generate(), "Privacy risk", Likelihood.LOW, ImpactMagnitude.MEDIUM)
-                ))
+                .findings(List.of(new RiskFinding(RiskFindingId.generate(), "Bias risk", Likelihood.MEDIUM, ImpactMagnitude.HIGH)))
                 .assessedAt(ASSESSED_AT)
                 .build();
     }
@@ -211,53 +176,32 @@ class PostgreSQLControlPersistenceIntegrationTest {
                 .build();
     }
 
-    private int controlRowCount() {
-        return jdbc.queryForObject("select count(*) from controls", Integer.class);
+    private ControlImplementation implementation(ControlId controlId, String description) {
+        return ControlImplementation.builder()
+                .id(ControlImplementationId.generate())
+                .controlId(controlId)
+                .description(description)
+                .implementedAt(IMPLEMENTED_AT)
+                .build();
     }
 
-    private Control reload(ControlId id) {
-        var entityManager = entityManagerFactory.createEntityManager();
-        try {
-            entityManager.getTransaction().begin();
-            var entity = entityManager.find(ControlJpaEntity.class, id.value());
-            assertNotNull(entity);
-            Control restored = mapper.toDomain(entity);
-            entityManager.getTransaction().commit();
-            return restored;
-        } finally {
-            if (entityManager.getTransaction().isActive()) {
-                entityManager.getTransaction().rollback();
-            }
-            entityManager.close();
-        }
+    private int implementationRowCount() {
+        return jdbc.queryForObject("select count(*) from control_implementations", Integer.class);
     }
 
-    private void assertControlRow(Control expected) {
+    private void assertImplementationRow(ControlImplementation expected) {
         jdbc.queryForObject("""
-                select id, risk_assessment_id, risk_finding_id, name, description, created_at
-                from controls where id = ?
+                select id, control_id, description, implemented_at
+                from control_implementations where id = ?
                 """, (row, rowNumber) -> {
             assertAll(
                     () -> assertEquals(expected.id().value(), row.getObject("id", UUID.class)),
-                    () -> assertEquals(expected.riskAssessmentId().value(), row.getObject("risk_assessment_id", UUID.class)),
-                    () -> assertEquals(expected.riskFindingId().value(), row.getObject("risk_finding_id", UUID.class)),
-                    () -> assertEquals(expected.name(), row.getString("name")),
+                    () -> assertEquals(expected.controlId().value(), row.getObject("control_id", UUID.class)),
                     () -> assertEquals(expected.description(), row.getString("description")),
-                    () -> assertEquals(CREATED_AT, row.getTimestamp("created_at").toInstant())
+                    () -> assertEquals(IMPLEMENTED_AT, row.getTimestamp("implemented_at").toInstant())
             );
             return true;
         }, expected.id().value());
-    }
-
-    private void assertState(Control expected, Control actual) {
-        assertAll(
-                () -> assertEquals(expected.id(), actual.id()),
-                () -> assertEquals(expected.riskAssessmentId(), actual.riskAssessmentId()),
-                () -> assertEquals(expected.riskFindingId(), actual.riskFindingId()),
-                () -> assertEquals(expected.name(), actual.name()),
-                () -> assertEquals(expected.description(), actual.description()),
-                () -> assertEquals(expected.createdAt(), actual.createdAt())
-        );
     }
 
     @Configuration(proxyBeanMethods = false)

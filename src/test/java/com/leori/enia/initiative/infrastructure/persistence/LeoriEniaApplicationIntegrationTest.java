@@ -19,7 +19,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -29,7 +31,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import javax.sql.DataSource;
+import java.sql.Timestamp;
 import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -37,8 +42,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Testcontainers
-@SpringBootTest(classes = LeoriEniaApplication.class)
+@SpringBootTest(
+        classes = {LeoriEniaApplication.class, LeoriEniaApplicationIntegrationTest.FixedClockConfiguration.class},
+        properties = "spring.main.allow-bean-definition-overriding=true"
+)
 class LeoriEniaApplicationIntegrationTest {
+
+    private static final Instant CREATED_AT = Instant.parse("2026-09-16T14:00:00.123456Z");
 
     @Container
     private static final PostgreSQLContainer<?> POSTGRESQL =
@@ -95,7 +105,7 @@ class LeoriEniaApplicationIntegrationTest {
         assertNotNull(dataSource);
         assertNotNull(transactionManager);
         assertNotNull(clock);
-        assertEquals("9", flyway.info().current().getVersion().toString());
+        assertEquals("10", flyway.info().current().getVersion().toString());
         assertNotNull(context.getBean(AISystemRepository.class));
         assertTrue(entityManagerFactory.getMetamodel().getEntities().stream().anyMatch(entity ->
                 entity.getJavaType().getName().equals(
@@ -107,10 +117,23 @@ class LeoriEniaApplicationIntegrationTest {
                 false, false));
 
         assertEquals(InitiativeStatus.DRAFT, created.status());
-        assertEquals(created.id(), repository.findById(created.id()).orElseThrow().initiative().id());
+        assertEquals(CREATED_AT, created.createdAt());
+        AIInitiative persisted = repository.findById(created.id()).orElseThrow().initiative();
+        assertEquals(created.id(), persisted.id());
+        assertEquals(CREATED_AT, persisted.createdAt());
         assertEquals("DRAFT", jdbc.queryForObject(
                 "select status from ai_initiatives where id = ?", String.class, created.id().value()));
+        assertEquals(Timestamp.from(CREATED_AT), jdbc.queryForObject(
+                "select created_at from ai_initiatives where id = ?", Timestamp.class, created.id().value()));
         assertEquals(0L, jdbc.queryForObject(
                 "select version from ai_initiatives where id = ?", Long.class, created.id().value()));
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class FixedClockConfiguration {
+        @Bean
+        Clock aiInitiativeClock() {
+            return Clock.fixed(CREATED_AT, ZoneOffset.UTC);
+        }
     }
 }
