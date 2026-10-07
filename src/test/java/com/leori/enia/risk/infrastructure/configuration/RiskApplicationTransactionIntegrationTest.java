@@ -7,6 +7,7 @@ import com.leori.enia.governance.domain.AISystemId;
 import com.leori.enia.initiative.infrastructure.persistence.AIInitiativePersistenceConfiguration;
 import com.leori.enia.risk.application.DefineControlCommand;
 import com.leori.enia.risk.application.DefineControlUseCase;
+import com.leori.enia.risk.application.GetControlUseCase;
 import com.leori.enia.risk.application.GetRiskAssessmentUseCase;
 import com.leori.enia.risk.application.RecordRiskAssessmentCommand;
 import com.leori.enia.risk.application.RecordRiskAssessmentUseCase;
@@ -87,6 +88,9 @@ class RiskApplicationTransactionIntegrationTest {
 
     @Autowired
     private DefineControlUseCase define;
+
+    @Autowired
+    private GetControlUseCase getControl;
 
     @Autowired
     private ObservedAISystemRepository systems;
@@ -188,6 +192,27 @@ class RiskApplicationTransactionIntegrationTest {
     }
 
     @Test
+    void gets_control_in_one_read_only_transaction_without_writing() {
+        RiskAssessment assessment = assessments.delegate.create(assessment(seedSystem().id()));
+        Control control = controls.delegate.create(control(assessment.id(), assessment.findings().getFirst().id()));
+        controls.reset();
+
+        Control result = getControl.execute(control.id());
+
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+        assertEquals(control.id(), result.id());
+        assertEquals(control.riskAssessmentId(), result.riskAssessmentId());
+        assertEquals(control.riskFindingId(), result.riskFindingId());
+        assertEquals(control.name(), result.name());
+        assertEquals(control.description(), result.description());
+        assertEquals(control.createdAt(), result.createdAt());
+        assertEquals(0, controls.creates);
+        assertEquals(1, controls.finds);
+        assertTrue(controls.findReadOnly);
+        assertEquals(1, controlRowCount());
+    }
+
+    @Test
     void rolls_back_control_flushed_inside_define_transaction() {
         RiskAssessment assessment = assessments.delegate.create(assessment(seedSystem().id()));
         assessments.reset();
@@ -275,6 +300,17 @@ class RiskApplicationTransactionIntegrationTest {
                 "Human review gate",
                 "Require documented human approval before deployment."
         );
+    }
+
+    private Control control(RiskAssessmentId assessmentId, RiskFindingId findingId) {
+        return Control.builder()
+                .id(com.leori.enia.risk.domain.ControlId.generate())
+                .riskAssessmentId(assessmentId)
+                .riskFindingId(findingId)
+                .name("Human review gate")
+                .description("Require documented human approval before deployment.")
+                .createdAt(ASSESSED_AT)
+                .build();
     }
 
     private RecordRiskAssessmentCommand command(AISystemId systemId) {
@@ -476,10 +512,13 @@ class RiskApplicationTransactionIntegrationTest {
         private final JdbcTemplate jdbc;
         private boolean failAfterFlush;
         private Long createTransaction;
+        private Long findTransaction;
+        private boolean findReadOnly;
         private com.leori.enia.risk.domain.ControlId flushedControlId;
         private RiskAssessmentId flushedAssessmentId;
         private RiskFindingId flushedFindingId;
         private int creates;
+        private int finds;
 
         ObservedControlRepository(
                 ControlRepository delegate,
@@ -508,6 +547,14 @@ class RiskApplicationTransactionIntegrationTest {
             return result;
         }
 
+        @Override
+        public Optional<Control> findById(com.leori.enia.risk.domain.ControlId id) {
+            findTransaction = currentTransaction("Transaction must start before finding the control");
+            findReadOnly = TransactionSynchronizationManager.isCurrentTransactionReadOnly();
+            finds++;
+            return delegate.findById(id);
+        }
+
         private Long currentWriteTransaction() {
             assertTrue(TransactionSynchronizationManager.isActualTransactionActive(),
                     "Transaction must start before creating the control");
@@ -515,13 +562,21 @@ class RiskApplicationTransactionIntegrationTest {
             return jdbc.queryForObject("select txid_current()", Long.class);
         }
 
+        private Long currentTransaction(String message) {
+            assertTrue(TransactionSynchronizationManager.isActualTransactionActive(), message);
+            return jdbc.queryForObject("select txid_current()", Long.class);
+        }
+
         void reset() {
             failAfterFlush = false;
             createTransaction = null;
+            findTransaction = null;
+            findReadOnly = false;
             flushedControlId = null;
             flushedAssessmentId = null;
             flushedFindingId = null;
             creates = 0;
+            finds = 0;
         }
     }
 

@@ -3,6 +3,7 @@ package com.leori.enia.risk.infrastructure.configuration;
 import com.leori.enia.governance.application.port.AISystemRepository;
 import com.leori.enia.governance.infrastructure.persistence.GovernancePersistenceConfiguration;
 import com.leori.enia.risk.application.DefineControlUseCase;
+import com.leori.enia.risk.application.GetControlUseCase;
 import com.leori.enia.risk.application.GetRiskAssessmentUseCase;
 import com.leori.enia.risk.application.RecordRiskAssessmentUseCase;
 import com.leori.enia.risk.application.port.RiskAssessmentRepository;
@@ -96,6 +97,14 @@ public class RiskApplicationConfiguration {
         return transactional(
                 new DefineControlUseCase(assessmentRepository, controlRepository, clock),
                 DefineControlUseCase.class
+        );
+    }
+
+    @Bean
+    GetControlUseCase getControlUseCase(ControlRepository controlRepository) {
+        return readOnlyTransactional(
+                new GetControlUseCase(controlRepository),
+                GetControlUseCase.class
         );
     }
 

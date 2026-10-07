@@ -120,6 +120,33 @@ class PostgreSQLControlPersistenceIntegrationTest {
     }
 
     @Test
+    void finds_existing_control_without_replaying_domain_events() {
+        RiskAssessment assessment = assessmentRepository.create(assessment(RiskAssessmentId.generate(), seedSystem()));
+        Control input = repository.create(control(assessment.id(), assessment.findings().getFirst().id()));
+
+        var result = repository.findById(input.id());
+
+        assertTrue(result.isPresent());
+        assertState(input, result.get());
+        assertTrue(result.get().domainEvents().isEmpty());
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+        assertEquals(1, controlRowCount());
+    }
+
+    @Test
+    void missing_control_returns_empty_optional() {
+        assertTrue(repository.findById(ControlId.generate()).isEmpty());
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+    }
+
+    @Test
+    void rejects_null_find_id_before_accessing_persistence() {
+        NullPointerException exception = assertThrows(NullPointerException.class, () -> repository.findById(null));
+
+        assertEquals("Control id is required", exception.getMessage());
+    }
+
+    @Test
     void accepts_control_when_finding_belongs_to_the_referenced_assessment() {
         RiskAssessment assessment = assessmentRepository.create(assessment(RiskAssessmentId.generate(), seedSystem()));
         Control input = control(assessment.id(), assessment.findings().get(1).id());

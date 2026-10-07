@@ -6,6 +6,7 @@ import com.leori.enia.risk.application.exception.RiskFindingNotFoundException;
 import com.leori.enia.risk.application.port.RiskAssessmentRepository;
 import com.leori.enia.risk.domain.ContextOfUse;
 import com.leori.enia.risk.domain.Control;
+import com.leori.enia.risk.domain.ControlId;
 import com.leori.enia.risk.domain.ControlRepository;
 import com.leori.enia.risk.domain.ImpactMagnitude;
 import com.leori.enia.risk.domain.Likelihood;
@@ -240,6 +241,11 @@ class DefineControlUseCaseTest {
                 throw failure;
             }
             return control;
+        }
+
+        @Override
+        public Optional<Control> findById(ControlId id) {
+            throw new AssertionError("Defining a control must not find a control");
         }
     }
 

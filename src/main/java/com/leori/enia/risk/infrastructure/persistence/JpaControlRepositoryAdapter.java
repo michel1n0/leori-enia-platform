@@ -1,10 +1,12 @@
 package com.leori.enia.risk.infrastructure.persistence;
 
 import com.leori.enia.risk.domain.Control;
+import com.leori.enia.risk.domain.ControlId;
 import com.leori.enia.risk.domain.ControlRepository;
 import jakarta.persistence.EntityManager;
 
 import java.util.Objects;
+import java.util.Optional;
 
 /** Transaction advice is supplied by RiskPersistenceConfiguration. */
 public final class JpaControlRepositoryAdapter implements ControlRepository {
@@ -24,5 +26,12 @@ public final class JpaControlRepositoryAdapter implements ControlRepository {
         entityManager.persist(entity);
         entityManager.flush();
         return control;
+    }
+
+    @Override
+    public Optional<Control> findById(ControlId id) {
+        Objects.requireNonNull(id, "Control id is required");
+        return Optional.ofNullable(entityManager.find(ControlJpaEntity.class, id.value()))
+                .map(mapper::toDomain);
     }
 }
