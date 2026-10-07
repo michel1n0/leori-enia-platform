@@ -105,7 +105,7 @@ class LeoriEniaApplicationIntegrationTest {
         assertNotNull(dataSource);
         assertNotNull(transactionManager);
         assertNotNull(clock);
-        assertEquals("10", flyway.info().current().getVersion().toString());
+        assertEquals("11", flyway.info().current().getVersion().toString());
         assertNotNull(context.getBean(AISystemRepository.class));
         assertTrue(entityManagerFactory.getMetamodel().getEntities().stream().anyMatch(entity ->
                 entity.getJavaType().getName().equals(

@@ -115,7 +115,7 @@ class PostgreSQLControlPersistenceIntegrationTest {
         Control restored = reload(input.id());
         assertState(input, restored);
         assertTrue(restored.domainEvents().isEmpty());
-        assertEquals("10", flyway.info().current().getVersion().toString());
+        assertEquals("11", flyway.info().current().getVersion().toString());
         flyway.validate();
     }
 
