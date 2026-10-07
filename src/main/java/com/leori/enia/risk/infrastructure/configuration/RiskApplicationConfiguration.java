@@ -5,8 +5,10 @@ import com.leori.enia.governance.infrastructure.persistence.GovernancePersistenc
 import com.leori.enia.risk.application.DefineControlUseCase;
 import com.leori.enia.risk.application.GetControlUseCase;
 import com.leori.enia.risk.application.GetRiskAssessmentUseCase;
+import com.leori.enia.risk.application.RecordControlImplementationUseCase;
 import com.leori.enia.risk.application.RecordRiskAssessmentUseCase;
 import com.leori.enia.risk.application.port.RiskAssessmentRepository;
+import com.leori.enia.risk.domain.ControlImplementationRepository;
 import com.leori.enia.risk.domain.ControlRepository;
 import com.leori.enia.risk.infrastructure.persistence.RiskPersistenceConfiguration;
 import org.springframework.aop.framework.ProxyFactory;
@@ -105,6 +107,18 @@ public class RiskApplicationConfiguration {
         return readOnlyTransactional(
                 new GetControlUseCase(controlRepository),
                 GetControlUseCase.class
+        );
+    }
+
+    @Bean
+    RecordControlImplementationUseCase recordControlImplementationUseCase(
+            ControlRepository controlRepository,
+            ControlImplementationRepository implementationRepository,
+            @Qualifier("riskClock") Clock clock
+    ) {
+        return transactional(
+                new RecordControlImplementationUseCase(controlRepository, implementationRepository, clock),
+                RecordControlImplementationUseCase.class
         );
     }
 
