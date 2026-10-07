@@ -234,6 +234,11 @@ class RecordControlImplementationUseCaseTest {
             }
             return repositoryResult == null ? implementation : repositoryResult;
         }
+
+        @Override
+        public Optional<ControlImplementation> findById(ControlImplementationId id) {
+            throw new AssertionError("Recording a control implementation must not read a control implementation");
+        }
     }
 
     private static final class CountingClock extends Clock {

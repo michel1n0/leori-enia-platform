@@ -7,6 +7,7 @@ import com.leori.enia.governance.domain.AISystemId;
 import com.leori.enia.initiative.infrastructure.persistence.AIInitiativePersistenceConfiguration;
 import com.leori.enia.risk.application.DefineControlCommand;
 import com.leori.enia.risk.application.DefineControlUseCase;
+import com.leori.enia.risk.application.GetControlImplementationUseCase;
 import com.leori.enia.risk.application.GetControlUseCase;
 import com.leori.enia.risk.application.GetRiskAssessmentUseCase;
 import com.leori.enia.risk.application.RecordControlImplementationCommand;
@@ -99,6 +100,9 @@ class RiskApplicationTransactionIntegrationTest {
 
     @Autowired
     private RecordControlImplementationUseCase recordImplementation;
+
+    @Autowired
+    private GetControlImplementationUseCase getImplementation;
 
     @Autowired
     private ObservedAISystemRepository systems;
@@ -266,6 +270,27 @@ class RiskApplicationTransactionIntegrationTest {
     }
 
     @Test
+    void gets_control_implementation_in_one_read_only_transaction_without_writing() {
+        RiskAssessment assessment = assessments.delegate.create(assessment(seedSystem().id()));
+        Control control = controls.delegate.create(control(assessment.id(), assessment.findings().getFirst().id()));
+        ControlImplementation implementation = implementations.delegate.create(implementation(control.id()));
+        implementations.reset();
+
+        ControlImplementation result = getImplementation.execute(implementation.id());
+
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+        assertEquals(implementation.id(), result.id());
+        assertEquals(implementation.controlId(), result.controlId());
+        assertEquals(implementation.description(), result.description());
+        assertEquals(implementation.implementedAt(), result.implementedAt());
+        assertEquals(0, result.domainEvents().size());
+        assertEquals(0, implementations.creates);
+        assertEquals(1, implementations.finds);
+        assertTrue(implementations.findReadOnly);
+        assertEquals(1, controlImplementationRowCount());
+    }
+
+    @Test
     void rolls_back_control_implementation_flushed_inside_recording_transaction() {
         RiskAssessment assessment = assessments.delegate.create(assessment(seedSystem().id()));
         Control control = controls.delegate.create(control(assessment.id(), assessment.findings().getFirst().id()));
@@ -364,6 +389,15 @@ class RiskApplicationTransactionIntegrationTest {
 
     private RecordControlImplementationCommand recordImplementationCommand(com.leori.enia.risk.domain.ControlId controlId) {
         return new RecordControlImplementationCommand(controlId, "Evidence package attached.");
+    }
+
+    private ControlImplementation implementation(com.leori.enia.risk.domain.ControlId controlId) {
+        return ControlImplementation.builder()
+                .id(com.leori.enia.risk.domain.ControlImplementationId.generate())
+                .controlId(controlId)
+                .description("Evidence package attached.")
+                .implementedAt(ASSESSED_AT)
+                .build();
     }
 
     private Control control(RiskAssessmentId assessmentId, RiskFindingId findingId) {
@@ -664,9 +698,12 @@ class RiskApplicationTransactionIntegrationTest {
         private final JdbcTemplate jdbc;
         private boolean failAfterFlush;
         private Long createTransaction;
+        private Long findTransaction;
+        private boolean findReadOnly;
         private com.leori.enia.risk.domain.ControlImplementationId flushedImplementationId;
         private com.leori.enia.risk.domain.ControlId flushedControlId;
         private int creates;
+        private int finds;
 
         ObservedControlImplementationRepository(
                 ControlImplementationRepository delegate,
@@ -696,6 +733,14 @@ class RiskApplicationTransactionIntegrationTest {
             return result;
         }
 
+        @Override
+        public Optional<ControlImplementation> findById(com.leori.enia.risk.domain.ControlImplementationId id) {
+            findTransaction = currentTransaction("Transaction must start before finding the control implementation");
+            findReadOnly = TransactionSynchronizationManager.isCurrentTransactionReadOnly();
+            finds++;
+            return delegate.findById(id);
+        }
+
         private Long currentWriteTransaction() {
             assertTrue(TransactionSynchronizationManager.isActualTransactionActive(),
                     "Transaction must start before creating the control implementation");
@@ -703,12 +748,20 @@ class RiskApplicationTransactionIntegrationTest {
             return jdbc.queryForObject("select txid_current()", Long.class);
         }
 
+        private Long currentTransaction(String message) {
+            assertTrue(TransactionSynchronizationManager.isActualTransactionActive(), message);
+            return jdbc.queryForObject("select txid_current()", Long.class);
+        }
+
         void reset() {
             failAfterFlush = false;
             createTransaction = null;
+            findTransaction = null;
+            findReadOnly = false;
             flushedImplementationId = null;
             flushedControlId = null;
             creates = 0;
+            finds = 0;
         }
     }
 

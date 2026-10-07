@@ -61,6 +61,23 @@ class RiskPersistenceTransactionIntegrationTest {
         assertTrue(attribute.rollbackOn(new Throwable()));
     }
 
+    @Test
+    void control_implementation_find_by_id_is_required_read_only_and_rolls_back_on_throwable() throws Exception {
+        TransactionInterceptor interceptor = transactionInterceptor(repository);
+        Method findById = ControlImplementationRepository.class.getMethod(
+                "findById",
+                com.leori.enia.risk.domain.ControlImplementationId.class
+        );
+
+        TransactionAttribute attribute = interceptor.getTransactionAttributeSource()
+                .getTransactionAttribute(findById, repository.getClass());
+
+        assertNotNull(attribute);
+        assertTrue(attribute.getPropagationBehavior() == TransactionDefinition.PROPAGATION_REQUIRED);
+        assertTrue(attribute.isReadOnly());
+        assertTrue(attribute.rollbackOn(new Throwable()));
+    }
+
     private TransactionInterceptor transactionInterceptor(Object bean) throws Exception {
         return Arrays.stream(((Advised) bean).getAdvisors())
                 .map(Advisor::getAdvice)

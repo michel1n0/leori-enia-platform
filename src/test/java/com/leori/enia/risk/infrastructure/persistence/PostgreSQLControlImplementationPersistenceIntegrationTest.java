@@ -44,6 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @Testcontainers
@@ -105,6 +106,47 @@ class PostgreSQLControlImplementationPersistenceIntegrationTest {
         assertEquals(events, input.domainEvents());
         assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
         assertEquals(1, implementationRowCount());
+        assertImplementationRow(input);
+    }
+
+    @Test
+    void finds_existing_control_implementation_with_rehydrated_state_and_no_pending_events() {
+        Control control = seedControl();
+        ControlImplementation input = implementation(control.id(), "Evidence package uploaded and reviewed.");
+        repository.create(input);
+
+        var result = repository.findById(input.id());
+
+        assertTrue(result.isPresent());
+        ControlImplementation found = result.orElseThrow();
+        assertAll(
+                () -> assertEquals(input.id(), found.id()),
+                () -> assertEquals(input.controlId(), found.controlId()),
+                () -> assertEquals(input.description(), found.description()),
+                () -> assertEquals(input.implementedAt(), found.implementedAt()),
+                () -> assertEquals(0, found.domainEvents().size())
+        );
+        assertEquals(1, implementationRowCount());
+    }
+
+    @Test
+    void missing_control_implementation_find_returns_empty() {
+        assertTrue(repository.findById(ControlImplementationId.generate()).isEmpty());
+    }
+
+    @Test
+    void read_does_not_mutate_or_create_events() {
+        Control control = seedControl();
+        ControlImplementation input = implementation(control.id(), "Evidence package uploaded and reviewed.");
+        repository.create(input);
+        input.clearDomainEvents();
+
+        ControlImplementation first = repository.findById(input.id()).orElseThrow();
+        ControlImplementation second = repository.findById(input.id()).orElseThrow();
+
+        assertEquals(1, implementationRowCount());
+        assertEquals(0, first.domainEvents().size());
+        assertEquals(0, second.domainEvents().size());
         assertImplementationRow(input);
     }
 

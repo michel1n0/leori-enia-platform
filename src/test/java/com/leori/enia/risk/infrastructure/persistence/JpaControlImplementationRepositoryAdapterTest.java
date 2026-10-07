@@ -11,12 +11,17 @@ import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
 
 class JpaControlImplementationRepositoryAdapterTest {
 
@@ -42,6 +47,51 @@ class JpaControlImplementationRepositoryAdapterTest {
         assertInstanceOf(ControlImplementationRecorded.class, events.getFirst());
         assertEquals(events, implementation.domainEvents());
         assertState(implementation, result);
+    }
+
+    @Test
+    void finds_existing_control_implementation_without_emitting_events_or_mutating() {
+        ControlImplementation expected = ControlImplementation.rehydrate(
+                ControlImplementationId.generate(),
+                ControlId.generate(),
+                "Evidence package uploaded and reviewed.",
+                IMPLEMENTED_AT
+        );
+        ControlImplementationJpaEntity entity = new ControlImplementationJpaEntity(
+                expected.id().value(),
+                expected.controlId().value(),
+                expected.description(),
+                expected.implementedAt()
+        );
+        when(entityManager.find(ControlImplementationJpaEntity.class, expected.id().value())).thenReturn(entity);
+
+        var result = adapter.findById(expected.id());
+
+        assertTrue(result.isPresent());
+        assertState(expected, result.orElseThrow());
+        assertEquals(0, result.orElseThrow().domainEvents().size());
+        verify(entityManager).find(ControlImplementationJpaEntity.class, expected.id().value());
+        verifyNoMoreInteractions(entityManager);
+    }
+
+    @Test
+    void missing_control_implementation_returns_empty() {
+        ControlImplementationId id = ControlImplementationId.generate();
+        when(entityManager.find(ControlImplementationJpaEntity.class, id.value())).thenReturn(null);
+
+        var result = adapter.findById(id);
+
+        assertFalse(result.isPresent());
+        verify(entityManager).find(ControlImplementationJpaEntity.class, id.value());
+        verifyNoMoreInteractions(entityManager);
+    }
+
+    @Test
+    void rejects_null_find_id_before_accessing_persistence() {
+        NullPointerException exception = assertThrows(NullPointerException.class, () -> adapter.findById(null));
+
+        assertEquals("Control implementation id is required", exception.getMessage());
+        verifyNoInteractions(entityManager);
     }
 
     @Test
