@@ -1,5 +1,6 @@
 package com.leori.enia.governance.infrastructure.persistence;
 
+import com.leori.enia.governance.application.port.AISystemGovernanceSummaryRepository;
 import com.leori.enia.governance.application.port.AISystemRepository;
 import jakarta.persistence.EntityManagerFactory;
 import org.springframework.aop.framework.ProxyFactory;
@@ -32,20 +33,49 @@ public class GovernancePersistenceConfiguration {
         var adapter = new JpaAISystemRepositoryAdapter(
                 SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory), mapper);
 
-        RuleBasedTransactionAttribute attribute = new RuleBasedTransactionAttribute();
-        attribute.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
-        attribute.setRollbackRules(List.of(new RollbackRuleAttribute(Throwable.class)));
+        RuleBasedTransactionAttribute attribute = requiredAttribute(false);
         NameMatchTransactionAttributeSource source = new NameMatchTransactionAttributeSource();
         source.addTransactionalMethod("create", attribute);
         source.addTransactionalMethod("findById", attribute);
 
+        return transactional(adapter, AISystemRepository.class, transactionManager, source);
+    }
+
+    @Bean
+    AISystemGovernanceSummaryRepository aiSystemGovernanceSummaryRepository(
+            EntityManagerFactory entityManagerFactory,
+            PlatformTransactionManager transactionManager
+    ) {
+        var adapter = new JpaAISystemGovernanceSummaryRepositoryAdapter(
+                SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory));
+
+        NameMatchTransactionAttributeSource source = new NameMatchTransactionAttributeSource();
+        source.addTransactionalMethod("summarize", requiredAttribute(true));
+
+        return transactional(adapter, AISystemGovernanceSummaryRepository.class, transactionManager, source);
+    }
+
+    private RuleBasedTransactionAttribute requiredAttribute(boolean readOnly) {
+        RuleBasedTransactionAttribute attribute = new RuleBasedTransactionAttribute();
+        attribute.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+        attribute.setReadOnly(readOnly);
+        attribute.setRollbackRules(List.of(new RollbackRuleAttribute(Throwable.class)));
+        return attribute;
+    }
+
+    private <T> T transactional(
+            Object target,
+            Class<T> repositoryType,
+            PlatformTransactionManager transactionManager,
+            NameMatchTransactionAttributeSource source
+    ) {
         TransactionInterceptor transactions = new TransactionInterceptor();
         transactions.setTransactionManager(transactionManager);
         transactions.setTransactionAttributeSource(source);
 
-        ProxyFactory factory = new ProxyFactory(adapter);
-        factory.setInterfaces(AISystemRepository.class);
+        ProxyFactory factory = new ProxyFactory(target);
+        factory.setInterfaces(repositoryType);
         factory.addAdvice(transactions);
-        return (AISystemRepository) factory.getProxy();
+        return repositoryType.cast(factory.getProxy());
     }
 }

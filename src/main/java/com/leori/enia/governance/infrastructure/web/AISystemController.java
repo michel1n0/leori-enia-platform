@@ -1,5 +1,6 @@
 package com.leori.enia.governance.infrastructure.web;
 
+import com.leori.enia.governance.application.GetAISystemGovernanceSummaryUseCase;
 import com.leori.enia.governance.application.GetAISystemUseCase;
 import com.leori.enia.governance.application.RegisterAISystemCommand;
 import com.leori.enia.governance.application.RegisterAISystemUseCase;
@@ -23,10 +24,16 @@ public class AISystemController {
 
     private final RegisterAISystemUseCase registerAISystem;
     private final GetAISystemUseCase getAISystem;
+    private final GetAISystemGovernanceSummaryUseCase getGovernanceSummary;
 
-    public AISystemController(RegisterAISystemUseCase registerAISystem, GetAISystemUseCase getAISystem) {
+    public AISystemController(
+            RegisterAISystemUseCase registerAISystem,
+            GetAISystemUseCase getAISystem,
+            GetAISystemGovernanceSummaryUseCase getGovernanceSummary
+    ) {
         this.registerAISystem = registerAISystem;
         this.getAISystem = getAISystem;
+        this.getGovernanceSummary = getGovernanceSummary;
     }
 
     @PostMapping
@@ -44,5 +51,11 @@ public class AISystemController {
     public ResponseEntity<AISystemResponse> get(@PathVariable UUID id) {
         var system = getAISystem.execute(new AISystemId(id));
         return ResponseEntity.ok(AISystemResponse.from(system));
+    }
+
+    @GetMapping("/{id}/governance-summary")
+    public ResponseEntity<AISystemGovernanceSummaryResponse> governanceSummary(@PathVariable UUID id) {
+        var summary = getGovernanceSummary.execute(new AISystemId(id));
+        return ResponseEntity.ok(AISystemGovernanceSummaryResponse.from(summary));
     }
 }

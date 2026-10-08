@@ -1,8 +1,11 @@
 package com.leori.enia.governance.infrastructure.configuration;
 
+import com.leori.enia.governance.application.AISystemGovernanceSummary;
+import com.leori.enia.governance.application.GetAISystemGovernanceSummaryUseCase;
 import com.leori.enia.governance.application.RegisterAISystemCommand;
 import com.leori.enia.governance.application.RegisterAISystemUseCase;
 import com.leori.enia.governance.application.exception.AISystemAlreadyRegisteredException;
+import com.leori.enia.governance.application.port.AISystemGovernanceSummaryRepository;
 import com.leori.enia.governance.application.port.AISystemRepository;
 import com.leori.enia.governance.domain.AISystem;
 import com.leori.enia.governance.domain.AISystemId;
@@ -20,6 +23,7 @@ import com.leori.enia.initiative.infrastructure.persistence.JpaAIInitiativeRepos
 import com.leori.enia.organization.domain.OrganizationId;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.aop.support.AopUtils;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -75,10 +79,16 @@ class GovernanceApplicationTransactionIntegrationTest {
     private RegisterAISystemUseCase register;
 
     @Autowired
+    private GetAISystemGovernanceSummaryUseCase summarize;
+
+    @Autowired
     private ObservedAIInitiativeRepository initiatives;
 
     @Autowired
     private ObservedAISystemRepository systems;
+
+    @Autowired
+    private ObservedAISystemGovernanceSummaryRepository summaries;
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -88,6 +98,7 @@ class GovernanceApplicationTransactionIntegrationTest {
         assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
         systems.reset();
         initiatives.reset();
+        summaries.reset();
         jdbc.update("delete from ai_systems");
         jdbc.update("delete from ai_initiatives");
     }
@@ -157,6 +168,7 @@ class GovernanceApplicationTransactionIntegrationTest {
         AISystem original = register.execute(new RegisterAISystemCommand(source.id(), "Original", "Description"));
         systems.reset();
         initiatives.reset();
+        summaries.reset();
 
         AISystemAlreadyRegisteredException duplicate = assertThrows(
                 AISystemAlreadyRegisteredException.class,
@@ -170,6 +182,29 @@ class GovernanceApplicationTransactionIntegrationTest {
         assertEquals(1, rowCount());
         assertSystemRow(original);
         assertSourceUnchanged(source, versionBefore);
+    }
+
+    @Test
+    void summarizes_system_governance_in_one_required_read_only_transaction() {
+        AIInitiative source = seedSource(InitiativeStatus.APPROVED, RiskLevel.HIGH);
+        AISystem system = register.execute(new RegisterAISystemCommand(source.id(), "System", "Description"));
+        systems.reset();
+        initiatives.reset();
+        summaries.reset();
+
+        AISystemGovernanceSummary result = summarize.execute(system.id());
+
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+        assertTrue(AopUtils.isAopProxy(summarize));
+        assertEquals(system.id(), result.aiSystemId());
+        assertEquals(1, systems.finds);
+        assertEquals(1, summaries.summarizes);
+        assertNotNull(systems.findTransaction);
+        assertNotNull(summaries.summaryTransaction);
+        assertEquals(systems.findTransaction, summaries.summaryTransaction,
+                "AI system lookup and summary projection must run in the same PostgreSQL transaction");
+        assertTrue(systems.findReadOnly);
+        assertTrue(summaries.summaryReadOnly);
     }
 
     private void assertSingleTransaction() {
@@ -249,6 +284,15 @@ class GovernanceApplicationTransactionIntegrationTest {
         ) {
             return new ObservedAISystemRepository(delegate, entityManager, jdbc);
         }
+
+        @Bean
+        @Primary
+        ObservedAISystemGovernanceSummaryRepository observedAISystemGovernanceSummaryRepository(
+                @Qualifier("aiSystemGovernanceSummaryRepository") AISystemGovernanceSummaryRepository delegate,
+                JdbcTemplate jdbc
+        ) {
+            return new ObservedAISystemGovernanceSummaryRepository(delegate, jdbc);
+        }
     }
 
     static class ObservedAIInitiativeRepository implements AIInitiativeRepository {
@@ -301,8 +345,11 @@ class GovernanceApplicationTransactionIntegrationTest {
         private final JdbcTemplate jdbc;
         private boolean failAfterFlush;
         private Long createTransaction;
+        private Long findTransaction;
+        private boolean findReadOnly;
         private AIInitiativeId flushedSourceId;
         private int creates;
+        private int finds;
 
         ObservedAISystemRepository(AISystemRepository delegate, EntityManager entityManager, JdbcTemplate jdbc) {
             this.delegate = delegate;
@@ -312,13 +359,16 @@ class GovernanceApplicationTransactionIntegrationTest {
 
         @Override
         public AISystem create(AISystem system) {
-            createTransaction = currentTransaction();
+            createTransaction = currentWriteTransaction();
             creates++;
             return observeWrite(system, () -> delegate.create(system));
         }
 
         @Override
         public Optional<AISystem> findById(AISystemId id) {
+            findTransaction = currentReadTransaction();
+            findReadOnly = TransactionSynchronizationManager.isCurrentTransactionReadOnly();
+            finds++;
             return delegate.findById(id);
         }
 
@@ -334,18 +384,65 @@ class GovernanceApplicationTransactionIntegrationTest {
             return result;
         }
 
-        private Long currentTransaction() {
+        private Long currentWriteTransaction() {
             assertTrue(TransactionSynchronizationManager.isActualTransactionActive(),
                     "Transaction must start before creating the system");
             assertFalse(TransactionSynchronizationManager.isCurrentTransactionReadOnly());
             return jdbc.queryForObject("select txid_current()", Long.class);
         }
 
+        private Long currentReadTransaction() {
+            assertTrue(TransactionSynchronizationManager.isActualTransactionActive(),
+                    "Transaction must start before finding the system");
+            assertTrue(TransactionSynchronizationManager.isCurrentTransactionReadOnly());
+            return jdbc.queryForObject("select txid_current()", Long.class);
+        }
+
         void reset() {
             failAfterFlush = false;
             createTransaction = null;
+            findTransaction = null;
+            findReadOnly = false;
             flushedSourceId = null;
             creates = 0;
+            finds = 0;
+        }
+    }
+
+    static class ObservedAISystemGovernanceSummaryRepository implements AISystemGovernanceSummaryRepository {
+        private final AISystemGovernanceSummaryRepository delegate;
+        private final JdbcTemplate jdbc;
+        private Long summaryTransaction;
+        private boolean summaryReadOnly;
+        private int summarizes;
+
+        ObservedAISystemGovernanceSummaryRepository(
+                AISystemGovernanceSummaryRepository delegate,
+                JdbcTemplate jdbc
+        ) {
+            this.delegate = delegate;
+            this.jdbc = jdbc;
+        }
+
+        @Override
+        public AISystemGovernanceSummary summarize(AISystemId aiSystemId) {
+            summaryTransaction = currentReadTransaction();
+            summaryReadOnly = TransactionSynchronizationManager.isCurrentTransactionReadOnly();
+            summarizes++;
+            return delegate.summarize(aiSystemId);
+        }
+
+        private Long currentReadTransaction() {
+            assertTrue(TransactionSynchronizationManager.isActualTransactionActive(),
+                    "Transaction must start before summarizing governance");
+            assertTrue(TransactionSynchronizationManager.isCurrentTransactionReadOnly());
+            return jdbc.queryForObject("select txid_current()", Long.class);
+        }
+
+        void reset() {
+            summaryTransaction = null;
+            summaryReadOnly = false;
+            summarizes = 0;
         }
     }
 
