@@ -1,10 +1,12 @@
 package com.leori.enia.evidence.infrastructure.persistence;
 
 import com.leori.enia.evidence.domain.Evidence;
+import com.leori.enia.evidence.domain.EvidenceId;
 import com.leori.enia.evidence.domain.EvidenceRepository;
 import jakarta.persistence.EntityManager;
 
 import java.util.Objects;
+import java.util.Optional;
 
 /** Transaction advice is supplied by EvidencePersistenceConfiguration. */
 public final class JpaEvidenceRepositoryAdapter implements EvidenceRepository {
@@ -24,5 +26,12 @@ public final class JpaEvidenceRepositoryAdapter implements EvidenceRepository {
         entityManager.persist(entity);
         entityManager.flush();
         return evidence;
+    }
+
+    @Override
+    public Optional<Evidence> findById(EvidenceId id) {
+        Objects.requireNonNull(id, "Evidence id is required");
+        return Optional.ofNullable(entityManager.find(EvidenceJpaEntity.class, id.value()))
+                .map(mapper::toDomain);
     }
 }

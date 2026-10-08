@@ -1,8 +1,10 @@
 package com.leori.enia.evidence.infrastructure.configuration;
 
+import com.leori.enia.evidence.application.GetEvidenceUseCase;
 import com.leori.enia.evidence.application.RecordEvidenceCommand;
 import com.leori.enia.evidence.application.RecordEvidenceUseCase;
 import com.leori.enia.evidence.domain.Evidence;
+import com.leori.enia.evidence.domain.EvidenceId;
 import com.leori.enia.evidence.domain.EvidenceRepository;
 import com.leori.enia.evidence.domain.event.EvidenceRecorded;
 import com.leori.enia.initiative.infrastructure.persistence.AIInitiativePersistenceConfiguration;
@@ -68,6 +70,9 @@ class EvidenceApplicationTransactionIntegrationTest {
     private RecordEvidenceUseCase record;
 
     @Autowired
+    private GetEvidenceUseCase get;
+
+    @Autowired
     private ObservedControlImplementationRepository implementations;
 
     @Autowired
@@ -96,6 +101,11 @@ class EvidenceApplicationTransactionIntegrationTest {
     }
 
     @Test
+    void get_evidence_use_case_is_transactionally_proxied() {
+        assertTrue(AopUtils.isAopProxy(get));
+    }
+
+    @Test
     void records_evidence_for_existing_control_implementation_in_one_required_read_write_transaction() {
         ControlImplementation implementation = seedControlImplementation();
 
@@ -116,6 +126,27 @@ class EvidenceApplicationTransactionIntegrationTest {
         assertEquals(1, result.domainEvents().size());
         assertInstanceOf(EvidenceRecorded.class, result.domainEvents().getFirst());
         assertEvidenceRow(result);
+    }
+
+    @Test
+    void gets_evidence_in_one_required_read_only_transaction_without_writing() {
+        ControlImplementation implementation = seedControlImplementation();
+        Evidence recorded = evidence.delegate.create(evidence(implementation.id()));
+        evidence.reset();
+
+        Evidence result = get.execute(recorded.id());
+
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+        assertEquals(recorded.id(), result.id());
+        assertEquals(recorded.controlImplementationId(), result.controlImplementationId());
+        assertEquals(recorded.description(), result.description());
+        assertEquals(recorded.reference(), result.reference());
+        assertEquals(recorded.recordedAt(), result.recordedAt());
+        assertEquals(0, result.domainEvents().size());
+        assertEquals(0, evidence.creates);
+        assertEquals(1, evidence.finds);
+        assertTrue(evidence.findReadOnly);
+        assertEquals(1, evidenceRowCount());
     }
 
     @Test
@@ -182,6 +213,16 @@ class EvidenceApplicationTransactionIntegrationTest {
 
         return implementations.delegate.findById(implementationId)
                 .orElseThrow(() -> new AssertionError("Seeded control implementation not found: " + implementationId));
+    }
+
+    private Evidence evidence(ControlImplementationId implementationId) {
+        return Evidence.builder()
+                .id(EvidenceId.generate())
+                .controlImplementationId(implementationId)
+                .description("Signed approval memo")
+                .reference("archive://approval.pdf")
+                .recordedAt(RECORDED_AT)
+                .build();
     }
 
     private void assertEvidenceRow(Evidence recorded) {
@@ -272,10 +313,13 @@ class EvidenceApplicationTransactionIntegrationTest {
         private final JdbcTemplate jdbc;
         private boolean failAfterFlush;
         private Long createTransaction;
+        private Long findTransaction;
         private boolean createReadOnly;
+        private boolean findReadOnly;
         private com.leori.enia.evidence.domain.EvidenceId flushedEvidenceId;
         private ControlImplementationId flushedControlImplementationId;
         private int creates;
+        private int finds;
 
         ObservedEvidenceRepository(EvidenceRepository delegate, EntityManager entityManager, JdbcTemplate jdbc) {
             this.delegate = delegate;
@@ -303,13 +347,26 @@ class EvidenceApplicationTransactionIntegrationTest {
             return result;
         }
 
+        @Override
+        public Optional<Evidence> findById(EvidenceId id) {
+            assertTrue(TransactionSynchronizationManager.isActualTransactionActive(),
+                    "Transaction must start before finding evidence");
+            findTransaction = jdbc.queryForObject("select txid_current()", Long.class);
+            findReadOnly = TransactionSynchronizationManager.isCurrentTransactionReadOnly();
+            finds++;
+            return delegate.findById(id);
+        }
+
         void reset() {
             failAfterFlush = false;
             createTransaction = null;
+            findTransaction = null;
             createReadOnly = false;
+            findReadOnly = false;
             flushedEvidenceId = null;
             flushedControlImplementationId = null;
             creates = 0;
+            finds = 0;
         }
     }
 

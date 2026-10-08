@@ -87,6 +87,20 @@ class EvidencePersistenceTransactionIntegrationTest {
     }
 
     @Test
+    void evidence_find_by_id_is_required_read_only_and_rolls_back_on_throwable() throws Exception {
+        TransactionInterceptor interceptor = transactionInterceptor(repository);
+        Method findById = EvidenceRepository.class.getMethod("findById", EvidenceId.class);
+
+        TransactionAttribute attribute = interceptor.getTransactionAttributeSource()
+                .getTransactionAttribute(findById, repository.getClass());
+
+        assertNotNull(attribute);
+        assertTrue(attribute.getPropagationBehavior() == TransactionDefinition.PROPAGATION_REQUIRED);
+        assertTrue(attribute.isReadOnly());
+        assertTrue(attribute.rollbackOn(new Throwable()));
+    }
+
+    @Test
     void create_rolls_back_on_persistence_failure() {
         Evidence input = evidence(ControlImplementationId.generate());
 

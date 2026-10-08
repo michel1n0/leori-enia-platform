@@ -250,6 +250,11 @@ class RecordEvidenceUseCaseTest {
             }
             return repositoryResult == null ? evidence : repositoryResult;
         }
+
+        @Override
+        public Optional<Evidence> findById(EvidenceId id) {
+            throw new AssertionError("Recording evidence must not read evidence by id");
+        }
     }
 
     private static final class CountingClock extends Clock {

@@ -152,6 +152,48 @@ class PostgreSQLEvidencePersistenceIntegrationTest {
     }
 
     @Test
+    void finds_existing_evidence_with_rehydrated_state_and_no_pending_events() {
+        ControlImplementation implementation = seedImplementation();
+        Evidence input = evidence(implementation.id(), "Signed approval minutes", "evidence-vault:item-123");
+        repository.create(input);
+
+        var result = repository.findById(input.id());
+
+        assertTrue(result.isPresent());
+        Evidence found = result.orElseThrow();
+        assertAll(
+                () -> assertEquals(input.id(), found.id()),
+                () -> assertEquals(input.controlImplementationId(), found.controlImplementationId()),
+                () -> assertEquals(input.description(), found.description()),
+                () -> assertEquals(input.reference(), found.reference()),
+                () -> assertEquals(input.recordedAt(), found.recordedAt()),
+                () -> assertEquals(0, found.domainEvents().size())
+        );
+        assertEquals(1, evidenceRowCount());
+    }
+
+    @Test
+    void missing_evidence_find_returns_empty() {
+        assertTrue(repository.findById(EvidenceId.generate()).isEmpty());
+    }
+
+    @Test
+    void read_does_not_mutate_or_create_events() {
+        ControlImplementation implementation = seedImplementation();
+        Evidence input = evidence(implementation.id(), "Signed approval minutes", "evidence-vault:item-123");
+        repository.create(input);
+        input.clearDomainEvents();
+
+        Evidence first = repository.findById(input.id()).orElseThrow();
+        Evidence second = repository.findById(input.id()).orElseThrow();
+
+        assertEquals(1, evidenceRowCount());
+        assertEquals(0, first.domainEvents().size());
+        assertEquals(0, second.domainEvents().size());
+        assertEvidenceRow(input);
+    }
+
+    @Test
     void database_fk_accepts_existing_control_implementation() {
         ControlImplementation implementation = seedImplementation();
         Evidence input = evidence(implementation.id(), "Signed approval minutes", "evidence-vault:item-123");

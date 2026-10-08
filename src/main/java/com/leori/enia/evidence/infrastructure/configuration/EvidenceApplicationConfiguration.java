@@ -1,5 +1,6 @@
 package com.leori.enia.evidence.infrastructure.configuration;
 
+import com.leori.enia.evidence.application.GetEvidenceUseCase;
 import com.leori.enia.evidence.application.RecordEvidenceUseCase;
 import com.leori.enia.evidence.domain.EvidenceRepository;
 import com.leori.enia.evidence.infrastructure.persistence.EvidencePersistenceConfiguration;
@@ -31,18 +32,31 @@ import java.util.List;
 public class EvidenceApplicationConfiguration {
 
     private final TransactionInterceptor transactions;
+    private final TransactionInterceptor readOnlyTransactions;
 
     public EvidenceApplicationConfiguration(PlatformTransactionManager transactionManager) {
         RuleBasedTransactionAttribute attribute = new RuleBasedTransactionAttribute();
         attribute.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
         attribute.setRollbackRules(List.of(new RollbackRuleAttribute(Throwable.class)));
 
+        RuleBasedTransactionAttribute readOnlyAttribute = new RuleBasedTransactionAttribute();
+        readOnlyAttribute.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+        readOnlyAttribute.setReadOnly(true);
+        readOnlyAttribute.setRollbackRules(List.of(new RollbackRuleAttribute(Throwable.class)));
+
         NameMatchTransactionAttributeSource source = new NameMatchTransactionAttributeSource();
         source.addTransactionalMethod("execute", attribute);
+
+        NameMatchTransactionAttributeSource readOnlySource = new NameMatchTransactionAttributeSource();
+        readOnlySource.addTransactionalMethod("execute", readOnlyAttribute);
 
         transactions = new TransactionInterceptor();
         transactions.setTransactionManager(transactionManager);
         transactions.setTransactionAttributeSource(source);
+
+        readOnlyTransactions = new TransactionInterceptor();
+        readOnlyTransactions.setTransactionManager(transactionManager);
+        readOnlyTransactions.setTransactionAttributeSource(readOnlySource);
     }
 
     @Bean(defaultCandidate = false)
@@ -63,10 +77,26 @@ public class EvidenceApplicationConfiguration {
         );
     }
 
+    @Bean
+    GetEvidenceUseCase getEvidenceUseCase(EvidenceRepository evidenceRepository) {
+        return readOnlyTransactional(
+                new GetEvidenceUseCase(evidenceRepository),
+                GetEvidenceUseCase.class
+        );
+    }
+
     private <T> T transactional(T target, Class<T> useCaseType) {
+        return proxied(target, useCaseType, transactions);
+    }
+
+    private <T> T readOnlyTransactional(T target, Class<T> useCaseType) {
+        return proxied(target, useCaseType, readOnlyTransactions);
+    }
+
+    private <T> T proxied(T target, Class<T> useCaseType, TransactionInterceptor interceptor) {
         ProxyFactory factory = new ProxyFactory(target);
         factory.setProxyTargetClass(true);
-        factory.addAdvice(transactions);
+        factory.addAdvice(interceptor);
         return useCaseType.cast(factory.getProxy());
     }
 }
