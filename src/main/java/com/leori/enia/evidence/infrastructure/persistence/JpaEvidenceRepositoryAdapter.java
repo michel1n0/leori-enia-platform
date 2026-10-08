@@ -3,8 +3,10 @@ package com.leori.enia.evidence.infrastructure.persistence;
 import com.leori.enia.evidence.domain.Evidence;
 import com.leori.enia.evidence.domain.EvidenceId;
 import com.leori.enia.evidence.domain.EvidenceRepository;
+import com.leori.enia.risk.domain.ControlImplementationId;
 import jakarta.persistence.EntityManager;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -33,5 +35,22 @@ public final class JpaEvidenceRepositoryAdapter implements EvidenceRepository {
         Objects.requireNonNull(id, "Evidence id is required");
         return Optional.ofNullable(entityManager.find(EvidenceJpaEntity.class, id.value()))
                 .map(mapper::toDomain);
+    }
+
+    @Override
+    public List<Evidence> findByControlImplementationId(ControlImplementationId controlImplementationId) {
+        Objects.requireNonNull(controlImplementationId, "Control implementation id is required");
+
+        return entityManager.createQuery("""
+                        select evidence
+                        from EvidenceJpaEntity evidence
+                        where evidence.controlImplementationId = :controlImplementationId
+                        order by evidence.recordedAt asc, evidence.id asc
+                        """, EvidenceJpaEntity.class)
+                .setParameter("controlImplementationId", controlImplementationId.value())
+                .getResultList()
+                .stream()
+                .map(mapper::toDomain)
+                .toList();
     }
 }

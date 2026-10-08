@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -254,6 +255,11 @@ class RecordEvidenceUseCaseTest {
         @Override
         public Optional<Evidence> findById(EvidenceId id) {
             throw new AssertionError("Recording evidence must not read evidence by id");
+        }
+
+        @Override
+        public List<Evidence> findByControlImplementationId(ControlImplementationId controlImplementationId) {
+            throw new AssertionError("Recording evidence must not list evidence by control implementation");
         }
     }
 

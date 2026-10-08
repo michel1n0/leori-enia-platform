@@ -5,9 +5,11 @@ import com.leori.enia.evidence.domain.EvidenceId;
 import com.leori.enia.evidence.domain.event.EvidenceRecorded;
 import com.leori.enia.risk.domain.ControlImplementationId;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.TypedQuery;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -89,6 +91,56 @@ class JpaEvidenceRepositoryAdapterTest {
     }
 
     @Test
+    void lists_evidence_by_control_implementation_with_expected_query_order_and_mapping() {
+        ControlImplementationId controlImplementationId = ControlImplementationId.generate();
+        Evidence first = Evidence.rehydrate(
+                EvidenceId.generate(), controlImplementationId, "Signed approval minutes", "evidence-vault:item-123",
+                RECORDED_AT);
+        Evidence second = Evidence.rehydrate(
+                EvidenceId.generate(), controlImplementationId, "Monitoring report", "evidence-vault:item-456",
+                RECORDED_AT.plusSeconds(60));
+        EvidenceJpaEntity firstEntity = entity(first);
+        EvidenceJpaEntity secondEntity = entity(second);
+        TypedQuery<EvidenceJpaEntity> query = evidenceListQuery(List.of(firstEntity, secondEntity), controlImplementationId);
+
+        List<Evidence> result = adapter.findByControlImplementationId(controlImplementationId);
+
+        assertEquals(2, result.size());
+        assertState(first, result.get(0));
+        assertState(second, result.get(1));
+        assertEquals(0, result.get(0).domainEvents().size());
+        assertEquals(0, result.get(1).domainEvents().size());
+        assertThrows(UnsupportedOperationException.class, () -> result.add(first));
+        verify(entityManager).createQuery(expectedListJpql(), EvidenceJpaEntity.class);
+        verify(query).setParameter("controlImplementationId", controlImplementationId.value());
+        verify(query).getResultList();
+        verifyNoMoreInteractions(entityManager, query);
+    }
+
+    @Test
+    void list_by_control_implementation_returns_empty_result() {
+        ControlImplementationId controlImplementationId = ControlImplementationId.generate();
+        TypedQuery<EvidenceJpaEntity> query = evidenceListQuery(List.of(), controlImplementationId);
+
+        List<Evidence> result = adapter.findByControlImplementationId(controlImplementationId);
+
+        assertTrue(result.isEmpty());
+        verify(entityManager).createQuery(expectedListJpql(), EvidenceJpaEntity.class);
+        verify(query).setParameter("controlImplementationId", controlImplementationId.value());
+        verify(query).getResultList();
+        verifyNoMoreInteractions(entityManager, query);
+    }
+
+    @Test
+    void rejects_null_control_implementation_id_before_accessing_persistence() {
+        NullPointerException exception = assertThrows(NullPointerException.class,
+                () -> adapter.findByControlImplementationId(null));
+
+        assertEquals("Control implementation id is required", exception.getMessage());
+        verifyNoInteractions(entityManager);
+    }
+
+    @Test
     void rejects_null_find_id_before_accessing_persistence() {
         NullPointerException exception = assertThrows(NullPointerException.class, () -> adapter.findById(null));
 
@@ -112,6 +164,37 @@ class JpaEvidenceRepositoryAdapterTest {
                 .reference("evidence-vault:item-123")
                 .recordedAt(RECORDED_AT)
                 .build();
+    }
+
+    private EvidenceJpaEntity entity(Evidence evidence) {
+        return new EvidenceJpaEntity(
+                evidence.id().value(),
+                evidence.controlImplementationId().value(),
+                evidence.description(),
+                evidence.reference(),
+                evidence.recordedAt()
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private TypedQuery<EvidenceJpaEntity> evidenceListQuery(
+            List<EvidenceJpaEntity> rows,
+            ControlImplementationId controlImplementationId
+    ) {
+        TypedQuery<EvidenceJpaEntity> query = mock(TypedQuery.class);
+        when(entityManager.createQuery(expectedListJpql(), EvidenceJpaEntity.class)).thenReturn(query);
+        when(query.setParameter("controlImplementationId", controlImplementationId.value())).thenReturn(query);
+        when(query.getResultList()).thenReturn(rows);
+        return query;
+    }
+
+    private String expectedListJpql() {
+        return """
+                select evidence
+                from EvidenceJpaEntity evidence
+                where evidence.controlImplementationId = :controlImplementationId
+                order by evidence.recordedAt asc, evidence.id asc
+                """;
     }
 
     private void assertState(Evidence expected, Evidence actual) {

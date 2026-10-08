@@ -1,5 +1,6 @@
 package com.leori.enia.evidence.infrastructure.configuration;
 
+import com.leori.enia.evidence.application.GetEvidenceByControlImplementationUseCase;
 import com.leori.enia.evidence.application.GetEvidenceUseCase;
 import com.leori.enia.evidence.application.RecordEvidenceUseCase;
 import com.leori.enia.evidence.domain.EvidenceRepository;
@@ -82,6 +83,17 @@ public class EvidenceApplicationConfiguration {
         return readOnlyTransactional(
                 new GetEvidenceUseCase(evidenceRepository),
                 GetEvidenceUseCase.class
+        );
+    }
+
+    @Bean
+    GetEvidenceByControlImplementationUseCase getEvidenceByControlImplementationUseCase(
+            ControlImplementationRepository controlImplementationRepository,
+            EvidenceRepository evidenceRepository
+    ) {
+        return readOnlyTransactional(
+                new GetEvidenceByControlImplementationUseCase(controlImplementationRepository, evidenceRepository),
+                GetEvidenceByControlImplementationUseCase.class
         );
     }
 

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -145,6 +146,11 @@ class GetEvidenceUseCaseTest {
                 throw failure;
             }
             return Optional.ofNullable(evidenceById.get(id));
+        }
+
+        @Override
+        public List<Evidence> findByControlImplementationId(ControlImplementationId controlImplementationId) {
+            throw new AssertionError("Get evidence by id use case must not list evidence by control implementation");
         }
     }
 }

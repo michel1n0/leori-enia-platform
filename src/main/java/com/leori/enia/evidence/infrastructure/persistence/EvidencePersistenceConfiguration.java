@@ -43,6 +43,7 @@ public class EvidencePersistenceConfiguration {
         NameMatchTransactionAttributeSource source = new NameMatchTransactionAttributeSource();
         source.addTransactionalMethod("create", attribute);
         source.addTransactionalMethod("findById", readOnlyAttribute);
+        source.addTransactionalMethod("findByControlImplementationId", readOnlyAttribute);
 
         TransactionInterceptor transactions = new TransactionInterceptor();
         transactions.setTransactionManager(transactionManager);

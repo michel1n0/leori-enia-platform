@@ -244,6 +244,70 @@ class PostgreSQLEvidencePersistenceIntegrationTest {
                 implementation.id().value()));
     }
 
+    @Test
+    void finds_evidence_by_control_implementation_in_recorded_at_then_id_order() {
+        ControlImplementation firstImplementation = seedImplementation();
+        ControlImplementation secondImplementation = implementationRepository.create(implementation(seedControl().id()));
+        Instant firstRecordedAt = Instant.parse("2026-10-04T12:30:00.123456Z");
+        Instant secondRecordedAt = Instant.parse("2026-10-04T12:45:00.123456Z");
+        Evidence first = evidence(
+                new EvidenceId(UUID.fromString("90000000-0000-0000-0000-000000000001")),
+                firstImplementation.id(),
+                "Signed approval minutes",
+                "evidence-vault:item-a1",
+                firstRecordedAt
+        );
+        Evidence second = evidence(
+                new EvidenceId(UUID.fromString("90000000-0000-0000-0000-000000000003")),
+                firstImplementation.id(),
+                "Second monitoring report",
+                "evidence-vault:item-a2",
+                secondRecordedAt
+        );
+        Evidence third = evidence(
+                new EvidenceId(UUID.fromString("90000000-0000-0000-0000-000000000002")),
+                firstImplementation.id(),
+                "First monitoring report",
+                "evidence-vault:item-a3",
+                secondRecordedAt
+        );
+        Evidence otherImplementationEvidence = evidence(
+                new EvidenceId(UUID.fromString("90000000-0000-0000-0000-000000000004")),
+                secondImplementation.id(),
+                "Other implementation evidence",
+                "evidence-vault:item-b1",
+                firstRecordedAt
+        );
+        repository.create(second);
+        repository.create(otherImplementationEvidence);
+        repository.create(third);
+        repository.create(first);
+
+        List<Evidence> result = repository.findByControlImplementationId(firstImplementation.id());
+
+        assertEquals(List.of(first.id(), third.id(), second.id()), result.stream().map(Evidence::id).toList());
+        assertAll(
+                () -> assertState(first, result.get(0)),
+                () -> assertState(third, result.get(1)),
+                () -> assertState(second, result.get(2)),
+                () -> assertEquals(0, result.get(0).domainEvents().size()),
+                () -> assertEquals(0, result.get(1).domainEvents().size()),
+                () -> assertEquals(0, result.get(2).domainEvents().size())
+        );
+        assertFalse(result.stream().map(Evidence::id).toList().contains(otherImplementationEvidence.id()));
+        assertEquals(4, evidenceRowCount());
+    }
+
+    @Test
+    void finds_empty_evidence_list_for_existing_control_implementation_without_rows() {
+        ControlImplementation implementation = seedImplementation();
+
+        List<Evidence> result = repository.findByControlImplementationId(implementation.id());
+
+        assertTrue(result.isEmpty());
+        assertEquals(0, evidenceRowCount());
+    }
+
     private ControlImplementation seedImplementation() {
         Control control = seedControl();
         return implementationRepository.create(implementation(control.id()));
@@ -307,12 +371,22 @@ class PostgreSQLEvidencePersistenceIntegrationTest {
     }
 
     private Evidence evidence(EvidenceId id, ControlImplementationId implementationId, String description, String reference) {
+        return evidence(id, implementationId, description, reference, RECORDED_AT);
+    }
+
+    private Evidence evidence(
+            EvidenceId id,
+            ControlImplementationId implementationId,
+            String description,
+            String reference,
+            Instant recordedAt
+    ) {
         return Evidence.builder()
                 .id(id)
                 .controlImplementationId(implementationId)
                 .description(description)
                 .reference(reference)
-                .recordedAt(RECORDED_AT)
+                .recordedAt(recordedAt)
                 .build();
     }
 

@@ -30,6 +30,11 @@ public class EvidenceErrorHandler {
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     ResponseEntity<ErrorResponse> invalidPathVariable(MethodArgumentTypeMismatchException exception) {
+        if ("controlImplementationId".equals(exception.getName())) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse(
+                            "INVALID_CONTROL_IMPLEMENTATION_ID", "Invalid control implementation id"));
+        }
         if ("id".equals(exception.getName())) {
             return ResponseEntity.badRequest()
                     .body(new ErrorResponse("INVALID_EVIDENCE_ID", "Invalid evidence id"));
