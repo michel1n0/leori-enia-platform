@@ -1,10 +1,13 @@
 package com.leori.enia.governance.infrastructure.configuration;
 
+import com.leori.enia.governance.application.AISystemGovernanceGaps;
 import com.leori.enia.governance.application.AISystemGovernanceSummary;
+import com.leori.enia.governance.application.GetAISystemGovernanceGapsUseCase;
 import com.leori.enia.governance.application.GetAISystemGovernanceSummaryUseCase;
 import com.leori.enia.governance.application.RegisterAISystemCommand;
 import com.leori.enia.governance.application.RegisterAISystemUseCase;
 import com.leori.enia.governance.application.exception.AISystemAlreadyRegisteredException;
+import com.leori.enia.governance.application.port.AISystemGovernanceGapsRepository;
 import com.leori.enia.governance.application.port.AISystemGovernanceSummaryRepository;
 import com.leori.enia.governance.application.port.AISystemRepository;
 import com.leori.enia.governance.domain.AISystem;
@@ -82,6 +85,9 @@ class GovernanceApplicationTransactionIntegrationTest {
     private GetAISystemGovernanceSummaryUseCase summarize;
 
     @Autowired
+    private GetAISystemGovernanceGapsUseCase gaps;
+
+    @Autowired
     private ObservedAIInitiativeRepository initiatives;
 
     @Autowired
@@ -89,6 +95,9 @@ class GovernanceApplicationTransactionIntegrationTest {
 
     @Autowired
     private ObservedAISystemGovernanceSummaryRepository summaries;
+
+    @Autowired
+    private ObservedAISystemGovernanceGapsRepository gapProjections;
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -99,6 +108,7 @@ class GovernanceApplicationTransactionIntegrationTest {
         systems.reset();
         initiatives.reset();
         summaries.reset();
+        gapProjections.reset();
         jdbc.update("delete from ai_systems");
         jdbc.update("delete from ai_initiatives");
     }
@@ -169,6 +179,7 @@ class GovernanceApplicationTransactionIntegrationTest {
         systems.reset();
         initiatives.reset();
         summaries.reset();
+        gapProjections.reset();
 
         AISystemAlreadyRegisteredException duplicate = assertThrows(
                 AISystemAlreadyRegisteredException.class,
@@ -191,6 +202,7 @@ class GovernanceApplicationTransactionIntegrationTest {
         systems.reset();
         initiatives.reset();
         summaries.reset();
+        gapProjections.reset();
 
         AISystemGovernanceSummary result = summarize.execute(system.id());
 
@@ -205,6 +217,30 @@ class GovernanceApplicationTransactionIntegrationTest {
                 "AI system lookup and summary projection must run in the same PostgreSQL transaction");
         assertTrue(systems.findReadOnly);
         assertTrue(summaries.summaryReadOnly);
+    }
+
+    @Test
+    void gets_system_governance_gaps_in_one_required_read_only_transaction() {
+        AIInitiative source = seedSource(InitiativeStatus.APPROVED, RiskLevel.HIGH);
+        AISystem system = register.execute(new RegisterAISystemCommand(source.id(), "System", "Description"));
+        systems.reset();
+        initiatives.reset();
+        summaries.reset();
+        gapProjections.reset();
+
+        AISystemGovernanceGaps result = gaps.execute(system.id());
+
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+        assertTrue(AopUtils.isAopProxy(gaps));
+        assertEquals(system.id(), result.aiSystemId());
+        assertEquals(1, systems.finds);
+        assertEquals(1, gapProjections.finds);
+        assertNotNull(systems.findTransaction);
+        assertNotNull(gapProjections.gapsTransaction);
+        assertEquals(systems.findTransaction, gapProjections.gapsTransaction,
+                "AI system lookup and gap projection must run in the same PostgreSQL transaction");
+        assertTrue(systems.findReadOnly);
+        assertTrue(gapProjections.gapsReadOnly);
     }
 
     private void assertSingleTransaction() {
@@ -292,6 +328,15 @@ class GovernanceApplicationTransactionIntegrationTest {
                 JdbcTemplate jdbc
         ) {
             return new ObservedAISystemGovernanceSummaryRepository(delegate, jdbc);
+        }
+
+        @Bean
+        @Primary
+        ObservedAISystemGovernanceGapsRepository observedAISystemGovernanceGapsRepository(
+                @Qualifier("aiSystemGovernanceGapsRepository") AISystemGovernanceGapsRepository delegate,
+                JdbcTemplate jdbc
+        ) {
+            return new ObservedAISystemGovernanceGapsRepository(delegate, jdbc);
         }
     }
 
@@ -443,6 +488,43 @@ class GovernanceApplicationTransactionIntegrationTest {
             summaryTransaction = null;
             summaryReadOnly = false;
             summarizes = 0;
+        }
+    }
+
+    static class ObservedAISystemGovernanceGapsRepository implements AISystemGovernanceGapsRepository {
+        private final AISystemGovernanceGapsRepository delegate;
+        private final JdbcTemplate jdbc;
+        private Long gapsTransaction;
+        private boolean gapsReadOnly;
+        private int finds;
+
+        ObservedAISystemGovernanceGapsRepository(
+                AISystemGovernanceGapsRepository delegate,
+                JdbcTemplate jdbc
+        ) {
+            this.delegate = delegate;
+            this.jdbc = jdbc;
+        }
+
+        @Override
+        public AISystemGovernanceGaps findByAISystemId(AISystemId aiSystemId) {
+            gapsTransaction = currentReadTransaction();
+            gapsReadOnly = TransactionSynchronizationManager.isCurrentTransactionReadOnly();
+            finds++;
+            return delegate.findByAISystemId(aiSystemId);
+        }
+
+        private Long currentReadTransaction() {
+            assertTrue(TransactionSynchronizationManager.isActualTransactionActive(),
+                    "Transaction must start before projecting governance gaps");
+            assertTrue(TransactionSynchronizationManager.isCurrentTransactionReadOnly());
+            return jdbc.queryForObject("select txid_current()", Long.class);
+        }
+
+        void reset() {
+            gapsTransaction = null;
+            gapsReadOnly = false;
+            finds = 0;
         }
     }
 

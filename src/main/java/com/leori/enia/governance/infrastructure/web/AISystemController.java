@@ -1,5 +1,6 @@
 package com.leori.enia.governance.infrastructure.web;
 
+import com.leori.enia.governance.application.GetAISystemGovernanceGapsUseCase;
 import com.leori.enia.governance.application.GetAISystemGovernanceSummaryUseCase;
 import com.leori.enia.governance.application.GetAISystemUseCase;
 import com.leori.enia.governance.application.RegisterAISystemCommand;
@@ -25,15 +26,18 @@ public class AISystemController {
     private final RegisterAISystemUseCase registerAISystem;
     private final GetAISystemUseCase getAISystem;
     private final GetAISystemGovernanceSummaryUseCase getGovernanceSummary;
+    private final GetAISystemGovernanceGapsUseCase getGovernanceGaps;
 
     public AISystemController(
             RegisterAISystemUseCase registerAISystem,
             GetAISystemUseCase getAISystem,
-            GetAISystemGovernanceSummaryUseCase getGovernanceSummary
+            GetAISystemGovernanceSummaryUseCase getGovernanceSummary,
+            GetAISystemGovernanceGapsUseCase getGovernanceGaps
     ) {
         this.registerAISystem = registerAISystem;
         this.getAISystem = getAISystem;
         this.getGovernanceSummary = getGovernanceSummary;
+        this.getGovernanceGaps = getGovernanceGaps;
     }
 
     @PostMapping
@@ -57,5 +61,11 @@ public class AISystemController {
     public ResponseEntity<AISystemGovernanceSummaryResponse> governanceSummary(@PathVariable UUID id) {
         var summary = getGovernanceSummary.execute(new AISystemId(id));
         return ResponseEntity.ok(AISystemGovernanceSummaryResponse.from(summary));
+    }
+
+    @GetMapping("/{id}/governance-gaps")
+    public ResponseEntity<AISystemGovernanceGapsResponse> governanceGaps(@PathVariable UUID id) {
+        var gaps = getGovernanceGaps.execute(new AISystemId(id));
+        return ResponseEntity.ok(AISystemGovernanceGapsResponse.from(gaps));
     }
 }

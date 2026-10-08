@@ -1,8 +1,10 @@
 package com.leori.enia.governance.infrastructure.configuration;
 
+import com.leori.enia.governance.application.GetAISystemGovernanceGapsUseCase;
 import com.leori.enia.governance.application.GetAISystemGovernanceSummaryUseCase;
 import com.leori.enia.governance.application.GetAISystemUseCase;
 import com.leori.enia.governance.application.RegisterAISystemUseCase;
+import com.leori.enia.governance.application.port.AISystemGovernanceGapsRepository;
 import com.leori.enia.governance.application.port.AISystemGovernanceSummaryRepository;
 import com.leori.enia.governance.application.port.AISystemRepository;
 import com.leori.enia.governance.infrastructure.persistence.GovernancePersistenceConfiguration;
@@ -76,6 +78,18 @@ public class GovernanceApplicationConfiguration {
         return transactional(
                 new GetAISystemGovernanceSummaryUseCase(systemRepository, summaryRepository),
                 GetAISystemGovernanceSummaryUseCase.class,
+                readOnlyTransactions
+        );
+    }
+
+    @Bean
+    GetAISystemGovernanceGapsUseCase getAISystemGovernanceGapsUseCase(
+            AISystemRepository systemRepository,
+            AISystemGovernanceGapsRepository gapsRepository
+    ) {
+        return transactional(
+                new GetAISystemGovernanceGapsUseCase(systemRepository, gapsRepository),
+                GetAISystemGovernanceGapsUseCase.class,
                 readOnlyTransactions
         );
     }

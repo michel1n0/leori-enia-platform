@@ -1,5 +1,6 @@
 package com.leori.enia.governance.infrastructure.persistence;
 
+import com.leori.enia.governance.application.port.AISystemGovernanceGapsRepository;
 import com.leori.enia.governance.application.port.AISystemGovernanceSummaryRepository;
 import com.leori.enia.governance.application.port.AISystemRepository;
 import jakarta.persistence.EntityManagerFactory;
@@ -53,6 +54,20 @@ public class GovernancePersistenceConfiguration {
         source.addTransactionalMethod("summarize", requiredAttribute(true));
 
         return transactional(adapter, AISystemGovernanceSummaryRepository.class, transactionManager, source);
+    }
+
+    @Bean
+    AISystemGovernanceGapsRepository aiSystemGovernanceGapsRepository(
+            EntityManagerFactory entityManagerFactory,
+            PlatformTransactionManager transactionManager
+    ) {
+        var adapter = new JpaAISystemGovernanceGapsRepositoryAdapter(
+                SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory));
+
+        NameMatchTransactionAttributeSource source = new NameMatchTransactionAttributeSource();
+        source.addTransactionalMethod("findByAISystemId", requiredAttribute(true));
+
+        return transactional(adapter, AISystemGovernanceGapsRepository.class, transactionManager, source);
     }
 
     private RuleBasedTransactionAttribute requiredAttribute(boolean readOnly) {
