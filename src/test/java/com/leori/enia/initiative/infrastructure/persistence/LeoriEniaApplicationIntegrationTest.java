@@ -2,6 +2,8 @@ package com.leori.enia.initiative.infrastructure.persistence;
 
 import com.leori.enia.LeoriEniaApplication;
 import com.leori.enia.governance.application.port.AISystemRepository;
+import com.leori.enia.governance.domain.AISystem;
+import com.leori.enia.governance.domain.AISystemId;
 import com.leori.enia.initiative.application.ApproveAIInitiativeUseCase;
 import com.leori.enia.initiative.application.AssessRiskAIInitiativeUseCase;
 import com.leori.enia.initiative.application.CreateAIInitiativeCommand;
@@ -11,12 +13,12 @@ import com.leori.enia.initiative.application.StartAssessmentAIInitiativeUseCase;
 import com.leori.enia.initiative.application.SubmitAIInitiativeUseCase;
 import com.leori.enia.initiative.application.port.AIInitiativeRepository;
 import com.leori.enia.initiative.domain.AIInitiative;
+import com.leori.enia.initiative.domain.AIInitiativeId;
 import com.leori.enia.initiative.domain.InitiativeStatus;
 import com.leori.enia.organization.domain.OrganizationId;
 import jakarta.persistence.EntityManagerFactory;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
-import org.springframework.aop.support.AopUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -26,6 +28,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -35,10 +38,12 @@ import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Testcontainers
@@ -71,6 +76,9 @@ class LeoriEniaApplicationIntegrationTest {
     private AIInitiativeRepository repository;
 
     @Autowired
+    private AISystemRepository systems;
+
+    @Autowired
     private SpringDataAIInitiativeRepository springDataRepository;
 
     @Autowired
@@ -99,18 +107,14 @@ class LeoriEniaApplicationIntegrationTest {
         assertNotNull(context.getBean(AssessRiskAIInitiativeUseCase.class));
         assertNotNull(context.getBean(ApproveAIInitiativeUseCase.class));
         assertNotNull(context.getBean(RejectAIInitiativeUseCase.class));
-        assertInstanceOf(JpaAIInitiativeRepositoryAdapter.class, repository);
+        assertNotNull(repository);
         assertNotNull(springDataRepository);
         assertNotNull(entityManagerFactory);
         assertNotNull(dataSource);
         assertNotNull(transactionManager);
         assertNotNull(clock);
-        assertEquals("11", flyway.info().current().getVersion().toString());
-        assertNotNull(context.getBean(AISystemRepository.class));
-        assertTrue(entityManagerFactory.getMetamodel().getEntities().stream().anyMatch(entity ->
-                entity.getJavaType().getName().equals(
-                        "com.leori.enia.governance.infrastructure.persistence.AISystemJpaEntity")));
-        assertTrue(AopUtils.isAopProxy(create));
+        assertEquals("12", flyway.info().current().getVersion().toString());
+        assertNotNull(systems);
 
         AIInitiative created = create.execute(new CreateAIInitiativeCommand(
                 OrganizationId.generate(), "Bootstrap test", "Production context persistence",
@@ -127,6 +131,49 @@ class LeoriEniaApplicationIntegrationTest {
                 "select created_at from ai_initiatives where id = ?", Timestamp.class, created.id().value()));
         assertEquals(0L, jdbc.queryForObject(
                 "select version from ai_initiatives where id = ?", Long.class, created.id().value()));
+
+        AISystem system = AISystem.builder()
+                .id(AISystemId.generate())
+                .organizationId(created.organizationId())
+                .sourceInitiativeId(created.id())
+                .name("Context system")
+                .description("AI system repository behavior")
+                .createdAt(CREATED_AT)
+                .build();
+        systems.create(system);
+
+        AISystem persistedSystem = systems.findById(system.id()).orElseThrow();
+        assertEquals(system.id(), persistedSystem.id());
+        assertEquals(created.organizationId(), persistedSystem.organizationId());
+        assertEquals(created.id(), persistedSystem.sourceInitiativeId());
+        assertEquals("Context system", persistedSystem.name());
+        assertEquals("AI system repository behavior", persistedSystem.description());
+        assertEquals(CREATED_AT, persistedSystem.createdAt());
+    }
+
+    @Test
+    void create_use_case_joins_outer_transaction_and_rolls_back_created_initiative() {
+        UUID[] createdId = new UUID[1];
+
+        assertThrows(FailureAfterCreate.class, () -> new TransactionTemplate(transactionManager)
+                .executeWithoutResult(transaction -> {
+                    AIInitiative created = create.execute(new CreateAIInitiativeCommand(
+                            OrganizationId.generate(), "Rollback test", "Must not commit",
+                            false, false));
+                    createdId[0] = created.id().value();
+
+                    assertEquals(InitiativeStatus.DRAFT, created.status());
+                    assertTrue(repository.findById(created.id()).isPresent());
+                    throw new FailureAfterCreate();
+                }));
+
+        assertNotNull(createdId[0]);
+        assertFalse(repository.findById(new AIInitiativeId(createdId[0])).isPresent());
+        assertEquals(0, jdbc.queryForObject(
+                "select count(*) from ai_initiatives where id = ?", Integer.class, createdId[0]));
+    }
+
+    static class FailureAfterCreate extends RuntimeException {
     }
 
     @TestConfiguration(proxyBeanMethods = false)

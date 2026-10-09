@@ -6,7 +6,10 @@ import com.leori.enia.governance.domain.AISystem;
 import com.leori.enia.governance.domain.AISystemId;
 import com.leori.enia.governance.infrastructure.persistence.JpaAISystemRepositoryAdapter;
 import com.leori.enia.initiative.infrastructure.persistence.AIInitiativePersistenceConfiguration;
+import com.leori.enia.registry.application.AssociateDatasetWithAISystemCommand;
+import com.leori.enia.registry.application.AssociateDatasetWithAISystemUseCase;
 import com.leori.enia.registry.application.GetDatasetUseCase;
+import com.leori.enia.registry.application.GetDatasetsByAISystemUseCase;
 import com.leori.enia.registry.application.RegisterAIModelCommand;
 import com.leori.enia.registry.application.RegisterAIModelUseCase;
 import com.leori.enia.registry.application.RegisterDatasetCommand;
@@ -14,6 +17,7 @@ import com.leori.enia.registry.application.RegisterDatasetUseCase;
 import com.leori.enia.registry.application.port.AIModelRepository;
 import com.leori.enia.registry.application.port.DatasetRepository;
 import com.leori.enia.registry.domain.AIModel;
+import com.leori.enia.registry.domain.AISystemDataset;
 import com.leori.enia.registry.domain.Dataset;
 import com.leori.enia.registry.domain.DatasetId;
 import com.leori.enia.registry.domain.event.AIModelRegistered;
@@ -32,7 +36,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -41,6 +47,7 @@ import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -90,10 +97,19 @@ class RegistryApplicationTransactionIntegrationTest {
     private GetDatasetUseCase getDataset;
 
     @Autowired
+    private AssociateDatasetWithAISystemUseCase associateDataset;
+
+    @Autowired
+    private GetDatasetsByAISystemUseCase getDatasetsBySystem;
+
+    @Autowired
     private ObservedDatasetRepository datasets;
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @BeforeEach
     void reset() {
@@ -101,6 +117,7 @@ class RegistryApplicationTransactionIntegrationTest {
         systems.reset();
         models.reset();
         datasets.reset();
+        jdbc.update("delete from ai_system_datasets");
         jdbc.update("delete from ai_datasets");
         jdbc.update("delete from ai_models");
         jdbc.update("delete from ai_systems");
@@ -214,6 +231,45 @@ class RegistryApplicationTransactionIntegrationTest {
         assertEquals(0, datasets.creates);
     }
 
+    @Test
+    void associate_dataset_use_case_joins_outer_transaction_and_rolls_back_association() {
+        AISystem system = seedSystem();
+        DatasetId datasetId = seedDataset("Dataset");
+
+        assertThrows(FailureAfterFlush.class, () -> new TransactionTemplate(transactionManager)
+                .executeWithoutResult(transaction -> {
+                    AISystemDataset association = associateDataset.execute(
+                            new AssociateDatasetWithAISystemCommand(system.id(), datasetId));
+
+                    assertEquals(system.id(), association.aiSystemId());
+                    assertEquals(datasetId, association.datasetId());
+                    assertEquals(REGISTERED_AT, association.associatedAt());
+                    assertEquals(1, associationCount(system.id(), datasetId));
+                    throw new FailureAfterFlush();
+                }));
+
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+        assertEquals(0, associationCount(system.id(), datasetId));
+    }
+
+    @Test
+    void get_datasets_by_system_use_case_reads_committed_associated_datasets() {
+        AISystem system = seedSystem();
+        DatasetId datasetId = seedDataset("Dataset");
+        jdbc.update("""
+                insert into ai_system_datasets (system_id, dataset_id, associated_at)
+                values (?, ?, ?)
+                """, system.id().value(), datasetId.value(), Timestamp.from(REGISTERED_AT));
+
+        var result = getDatasetsBySystem.execute(system.id());
+
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+        assertEquals(List.of(datasetId), result.stream().map(Dataset::id).toList());
+        assertEquals(List.of("Dataset"), result.stream().map(Dataset::name).toList());
+        assertEquals(List.of("Description"), result.stream().map(Dataset::description).toList());
+        assertEquals(List.of(REGISTERED_AT), result.stream().map(Dataset::createdAt).toList());
+    }
+
     // ---------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------
@@ -243,6 +299,15 @@ class RegistryApplicationTransactionIntegrationTest {
                 .orElseThrow(() -> new AssertionError("Seeded system not found: " + systemId));
     }
 
+    private DatasetId seedDataset(String name) {
+        DatasetId datasetId = DatasetId.generate();
+        jdbc.update("""
+                insert into ai_datasets (id, name, description, created_at)
+                values (?, ?, 'Description', ?)
+                """, datasetId.value(), name, Timestamp.from(REGISTERED_AT));
+        return datasetId;
+    }
+
     private void assertModelRow(AIModel model) {
         assertEquals(model.systemId().value(), jdbc.queryForObject(
                 "select system_id from ai_models where id = ?", UUID.class, model.id().value()));
@@ -256,6 +321,13 @@ class RegistryApplicationTransactionIntegrationTest {
 
     private int rowCount() {
         return jdbc.queryForObject("select count(*) from ai_models", Integer.class);
+    }
+
+    private int associationCount(AISystemId systemId, DatasetId datasetId) {
+        return jdbc.queryForObject("""
+                select count(*) from ai_system_datasets
+                where system_id = ? and dataset_id = ?
+                """, Integer.class, systemId.value(), datasetId.value());
     }
 
     // ---------------------------------------------------------------------------
@@ -332,7 +404,6 @@ class RegistryApplicationTransactionIntegrationTest {
         private Long currentTransaction() {
             assertTrue(TransactionSynchronizationManager.isActualTransactionActive(),
                     "Transaction must start before finding the system");
-            assertFalse(TransactionSynchronizationManager.isCurrentTransactionReadOnly());
             return jdbc.queryForObject("select txid_current()", Long.class);
         }
 

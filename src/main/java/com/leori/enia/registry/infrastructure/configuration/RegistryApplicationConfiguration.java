@@ -2,11 +2,14 @@ package com.leori.enia.registry.infrastructure.configuration;
 
 import com.leori.enia.governance.application.port.AISystemRepository;
 import com.leori.enia.governance.infrastructure.persistence.GovernancePersistenceConfiguration;
+import com.leori.enia.registry.application.AssociateDatasetWithAISystemUseCase;
 import com.leori.enia.registry.application.GetAIModelUseCase;
 import com.leori.enia.registry.application.GetDatasetUseCase;
+import com.leori.enia.registry.application.GetDatasetsByAISystemUseCase;
 import com.leori.enia.registry.application.RegisterAIModelUseCase;
 import com.leori.enia.registry.application.RegisterDatasetUseCase;
 import com.leori.enia.registry.application.port.AIModelRepository;
+import com.leori.enia.registry.application.port.AISystemDatasetRepository;
 import com.leori.enia.registry.application.port.DatasetRepository;
 import com.leori.enia.registry.infrastructure.persistence.RegistryPersistenceConfiguration;
 import org.springframework.aop.framework.ProxyFactory;
@@ -35,18 +38,31 @@ import java.util.List;
 public class RegistryApplicationConfiguration {
 
     private final TransactionInterceptor transactions;
+    private final TransactionInterceptor readOnlyTransactions;
 
     public RegistryApplicationConfiguration(PlatformTransactionManager transactionManager) {
-        RuleBasedTransactionAttribute attribute = new RuleBasedTransactionAttribute();
-        attribute.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
-        attribute.setRollbackRules(List.of(new RollbackRuleAttribute(Throwable.class)));
+        RuleBasedTransactionAttribute writableAttribute = new RuleBasedTransactionAttribute();
+        writableAttribute.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+        writableAttribute.setRollbackRules(List.of(new RollbackRuleAttribute(Throwable.class)));
 
-        NameMatchTransactionAttributeSource source = new NameMatchTransactionAttributeSource();
-        source.addTransactionalMethod("execute", attribute);
+        NameMatchTransactionAttributeSource writableSource = new NameMatchTransactionAttributeSource();
+        writableSource.addTransactionalMethod("execute", writableAttribute);
 
         transactions = new TransactionInterceptor();
         transactions.setTransactionManager(transactionManager);
-        transactions.setTransactionAttributeSource(source);
+        transactions.setTransactionAttributeSource(writableSource);
+
+        RuleBasedTransactionAttribute readOnlyAttribute = new RuleBasedTransactionAttribute();
+        readOnlyAttribute.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+        readOnlyAttribute.setReadOnly(true);
+        readOnlyAttribute.setRollbackRules(List.of(new RollbackRuleAttribute(Throwable.class)));
+
+        NameMatchTransactionAttributeSource readOnlySource = new NameMatchTransactionAttributeSource();
+        readOnlySource.addTransactionalMethod("execute", readOnlyAttribute);
+
+        readOnlyTransactions = new TransactionInterceptor();
+        readOnlyTransactions.setTransactionManager(transactionManager);
+        readOnlyTransactions.setTransactionAttributeSource(readOnlySource);
     }
 
     @Bean(defaultCandidate = false)
@@ -94,10 +110,47 @@ public class RegistryApplicationConfiguration {
         );
     }
 
+    @Bean
+    AssociateDatasetWithAISystemUseCase associateDatasetWithAISystemUseCase(
+            AISystemRepository systemRepository,
+            DatasetRepository datasetRepository,
+            AISystemDatasetRepository associationRepository,
+            @Qualifier("registryClock") Clock clock
+    ) {
+        return transactional(
+                new AssociateDatasetWithAISystemUseCase(
+                        systemRepository,
+                        datasetRepository,
+                        associationRepository,
+                        clock
+                ),
+                AssociateDatasetWithAISystemUseCase.class
+        );
+    }
+
+    @Bean
+    GetDatasetsByAISystemUseCase getDatasetsByAISystemUseCase(
+            AISystemRepository systemRepository,
+            AISystemDatasetRepository associationRepository
+    ) {
+        return transactionalReadOnly(
+                new GetDatasetsByAISystemUseCase(systemRepository, associationRepository),
+                GetDatasetsByAISystemUseCase.class
+        );
+    }
+
     private <T> T transactional(T target, Class<T> useCaseType) {
+        return proxied(target, useCaseType, transactions);
+    }
+
+    private <T> T transactionalReadOnly(T target, Class<T> useCaseType) {
+        return proxied(target, useCaseType, readOnlyTransactions);
+    }
+
+    private <T> T proxied(T target, Class<T> useCaseType, TransactionInterceptor transactionInterceptor) {
         ProxyFactory factory = new ProxyFactory(target);
         factory.setProxyTargetClass(true);
-        factory.addAdvice(transactions);
+        factory.addAdvice(transactionInterceptor);
         return useCaseType.cast(factory.getProxy());
     }
 }

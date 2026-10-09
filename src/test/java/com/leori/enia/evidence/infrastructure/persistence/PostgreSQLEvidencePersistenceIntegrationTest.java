@@ -116,7 +116,7 @@ class PostgreSQLEvidencePersistenceIntegrationTest {
 
     @Test
     void flyway_creates_evidence_table_with_latest_version_and_expected_constraints() {
-        assertEquals("11", flyway.info().current().getVersion().toString());
+        assertEquals("12", flyway.info().current().getVersion().toString());
         flyway.validate();
         Set<String> constraints = Set.copyOf(jdbc.queryForList("""
                 select constraint_name from information_schema.table_constraints
