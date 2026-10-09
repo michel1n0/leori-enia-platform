@@ -13,6 +13,7 @@ public record AISystemGovernanceSummary(
         long findingsWithoutControls,
         long controlsWithoutImplementation,
         long implementationsWithoutEvidence,
-        long registeredModelCount
+        long registeredModelCount,
+        long datasetCount
 ) {
 }

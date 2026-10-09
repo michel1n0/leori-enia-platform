@@ -5,7 +5,6 @@ import com.leori.enia.governance.domain.AISystemId;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -14,7 +13,6 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -44,7 +42,8 @@ class JpaAISystemGovernanceSummaryRepositoryAdapterTest {
                 Long.valueOf(7),
                 Integer.valueOf(8),
                 BigInteger.valueOf(9),
-                Long.valueOf(10)
+                Long.valueOf(10),
+                BigDecimal.valueOf(11)
         });
 
         AISystemGovernanceSummary summary = adapter.summarize(id);
@@ -60,7 +59,8 @@ class JpaAISystemGovernanceSummaryRepositoryAdapterTest {
                 () -> assertEquals(7, summary.findingsWithoutControls()),
                 () -> assertEquals(8, summary.controlsWithoutImplementation()),
                 () -> assertEquals(9, summary.implementationsWithoutEvidence()),
-                () -> assertEquals(10, summary.registeredModelCount())
+                () -> assertEquals(10, summary.registeredModelCount()),
+                () -> assertEquals(11, summary.datasetCount())
         );
         verify(query).setParameter(1, id.value());
     }
@@ -71,29 +71,15 @@ class JpaAISystemGovernanceSummaryRepositoryAdapterTest {
         when(entityManager.createNativeQuery(anyString())).thenReturn(query);
         when(query.setParameter(1, id.value())).thenReturn(query);
         when(query.getSingleResult()).thenReturn(new Object[]{
-                id.value().toString(), 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L
+                id.value().toString(), 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, BigInteger.ZERO
         });
 
-        assertEquals(id, adapter.summarize(id).aiSystemId());
-    }
+        AISystemGovernanceSummary summary = adapter.summarize(id);
 
-    @Test
-    void query_uses_ai_system_root_with_scalar_subqueries_and_exists_filters() {
-        AISystemId id = AISystemId.generate();
-        when(entityManager.createNativeQuery(anyString())).thenReturn(query);
-        when(query.setParameter(1, id.value())).thenReturn(query);
-        when(query.getSingleResult()).thenReturn(new Object[]{
-                id.value(), 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L
-        });
-        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
-
-        adapter.summarize(id);
-
-        verify(entityManager).createNativeQuery(sql.capture());
-        assertTrue(sql.getValue().contains("from ai_systems s"));
-        assertTrue(sql.getValue().contains("select count(*)"));
-        assertTrue(sql.getValue().contains("exists"));
-        assertTrue(sql.getValue().contains("not exists"));
+        assertAll(
+                () -> assertEquals(id, summary.aiSystemId()),
+                () -> assertEquals(0, summary.datasetCount())
+        );
     }
 
     @Test

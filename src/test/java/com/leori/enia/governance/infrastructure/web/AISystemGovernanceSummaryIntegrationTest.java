@@ -64,6 +64,8 @@ class AISystemGovernanceSummaryIntegrationTest {
         jdbc.update("delete from risk_assessment_findings");
         jdbc.update("delete from risk_assessments");
         jdbc.update("delete from ai_models");
+        jdbc.update("delete from ai_system_datasets");
+        jdbc.update("delete from ai_datasets");
         jdbc.update("delete from ai_systems");
         jdbc.update("delete from ai_initiatives");
     }
@@ -72,6 +74,8 @@ class AISystemGovernanceSummaryIntegrationTest {
     void gets_governance_summary_with_exact_metrics() throws Exception {
         UUID systemId = seedSystem();
         seedModel(systemId);
+        associateDataset(systemId, seedDataset("Dataset A"));
+        associateDataset(systemId, seedDataset("Dataset B"));
         UUID assessment = seedAssessment(systemId);
         UUID controlledFinding = seedFinding(assessment, 0);
         seedFinding(assessment, 1);
@@ -88,7 +92,7 @@ class AISystemGovernanceSummaryIntegrationTest {
 
         JsonNode body = json.readTree(result.getResponse().getContentAsString());
         assertAll(
-                () -> assertEquals(11, body.size()),
+                () -> assertEquals(12, body.size()),
                 () -> assertEquals(systemId.toString(), body.get("aiSystemId").asText()),
                 () -> assertEquals(1, body.get("riskAssessmentCount").asLong()),
                 () -> assertEquals(2, body.get("findingCount").asLong()),
@@ -100,6 +104,7 @@ class AISystemGovernanceSummaryIntegrationTest {
                 () -> assertEquals(0, body.get("controlsWithoutImplementation").asLong()),
                 () -> assertEquals(1, body.get("implementationsWithoutEvidence").asLong()),
                 () -> assertEquals(1, body.get("registeredModelCount").asLong()),
+                () -> assertEquals(2, body.get("datasetCount").asLong()),
                 () -> assertNoInternalFields(body)
         );
         assertEquals(0, jdbc.queryForObject("select count(*) from evidence where control_implementation_id = ?",
@@ -126,7 +131,8 @@ class AISystemGovernanceSummaryIntegrationTest {
                 () -> assertEquals(0, body.get("findingsWithoutControls").asLong()),
                 () -> assertEquals(0, body.get("controlsWithoutImplementation").asLong()),
                 () -> assertEquals(0, body.get("implementationsWithoutEvidence").asLong()),
-                () -> assertEquals(0, body.get("registeredModelCount").asLong())
+                () -> assertEquals(0, body.get("registeredModelCount").asLong()),
+                () -> assertEquals(0, body.get("datasetCount").asLong())
         );
     }
 
@@ -172,6 +178,22 @@ class AISystemGovernanceSummaryIntegrationTest {
                 insert into ai_models (id, system_id, name, description, provider, created_at)
                 values (?, ?, 'Model', 'Description', 'Provider', ?)
                 """, UUID.randomUUID(), systemId, Timestamp.from(CREATED_AT));
+    }
+
+    private UUID seedDataset(String name) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("""
+                insert into ai_datasets (id, name, description, created_at)
+                values (?, ?, 'Dataset description', ?)
+                """, id, name, Timestamp.from(CREATED_AT));
+        return id;
+    }
+
+    private void associateDataset(UUID systemId, UUID datasetId) {
+        jdbc.update("""
+                insert into ai_system_datasets (system_id, dataset_id, associated_at)
+                values (?, ?, ?)
+                """, systemId, datasetId, Timestamp.from(CREATED_AT));
     }
 
     private UUID seedAssessment(UUID systemId) {

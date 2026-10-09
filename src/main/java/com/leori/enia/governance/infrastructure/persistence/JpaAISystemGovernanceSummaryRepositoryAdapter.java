@@ -92,7 +92,10 @@ public final class JpaAISystemGovernanceSummaryRepositoryAdapter implements AISy
                  )) as implementations_without_evidence,
                 (select count(*)
                  from ai_models m
-                 where m.system_id = s.id) as registered_model_count
+                 where m.system_id = s.id) as registered_model_count,
+                (select count(*)
+                 from ai_system_datasets sd
+                 where sd.system_id = s.id) as dataset_count
             from ai_systems s
             where s.id = ?
             """;
@@ -120,7 +123,8 @@ public final class JpaAISystemGovernanceSummaryRepositoryAdapter implements AISy
                 count(row[7]),
                 count(row[8]),
                 count(row[9]),
-                count(row[10])
+                count(row[10]),
+                count(row[11])
         );
     }
 

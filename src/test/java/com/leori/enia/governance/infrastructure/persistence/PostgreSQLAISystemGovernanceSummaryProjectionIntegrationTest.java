@@ -61,6 +61,8 @@ class PostgreSQLAISystemGovernanceSummaryProjectionIntegrationTest {
         jdbc.update("delete from risk_assessment_findings");
         jdbc.update("delete from risk_assessments");
         jdbc.update("delete from ai_models");
+        jdbc.update("delete from ai_system_datasets");
+        jdbc.update("delete from ai_datasets");
         jdbc.update("delete from ai_systems");
         jdbc.update("delete from ai_initiatives");
     }
@@ -71,12 +73,17 @@ class PostgreSQLAISystemGovernanceSummaryProjectionIntegrationTest {
 
         AISystemGovernanceSummary summary = repository.summarize(systemId);
 
-        assertSummary(summary, systemId, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        assertSummary(summary, systemId, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 
     @Test
     void critical_multiplication_fixture_counts_each_relation_without_inflation() {
         AISystemId systemId = seedSystem();
+        AISystemId secondSystemId = seedSystem();
+        AISystemId thirdSystemId = seedSystem();
+        associateDataset(systemId, seedDataset("Dataset A"));
+        associateDataset(systemId, seedDataset("Dataset B"));
+        associateDataset(secondSystemId, seedDataset("Dataset C"));
         seedModel(systemId);
         seedModel(systemId);
         UUID assessment = seedAssessment(systemId);
@@ -92,7 +99,9 @@ class PostgreSQLAISystemGovernanceSummaryProjectionIntegrationTest {
 
         AISystemGovernanceSummary summary = repository.summarize(systemId);
 
-        assertSummary(summary, systemId, 1, 2, 2, 1, 2, 3, 1, 1, 0, 2);
+        assertSummary(summary, systemId, 1, 2, 2, 1, 2, 3, 1, 1, 0, 2, 2);
+        assertSummary(repository.summarize(secondSystemId), secondSystemId, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1);
+        assertSummary(repository.summarize(thirdSystemId), thirdSystemId, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         assertEquals(0, jdbc.queryForObject(
                 "select count(*) from control_implementations where control_id = ?", Integer.class,
                 secondControl));
@@ -108,7 +117,7 @@ class PostgreSQLAISystemGovernanceSummaryProjectionIntegrationTest {
 
         AISystemGovernanceSummary summary = repository.summarize(systemId);
 
-        assertSummary(summary, systemId, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0);
+        assertSummary(summary, systemId, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0);
     }
 
     @Test
@@ -122,7 +131,7 @@ class PostgreSQLAISystemGovernanceSummaryProjectionIntegrationTest {
 
         AISystemGovernanceSummary summary = repository.summarize(systemId);
 
-        assertSummary(summary, systemId, 1, 1, 1, 1, 2, 0, 0, 0, 2, 0);
+        assertSummary(summary, systemId, 1, 1, 1, 1, 2, 0, 0, 0, 2, 0, 0);
     }
 
     @Test
@@ -137,7 +146,7 @@ class PostgreSQLAISystemGovernanceSummaryProjectionIntegrationTest {
 
         AISystemGovernanceSummary summary = repository.summarize(systemId);
 
-        assertSummary(summary, systemId, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0);
+        assertSummary(summary, systemId, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0);
     }
 
     private AISystemId seedSystem() {
@@ -162,6 +171,22 @@ class PostgreSQLAISystemGovernanceSummaryProjectionIntegrationTest {
                 insert into ai_models (id, system_id, name, description, provider, created_at)
                 values (?, ?, 'Model', 'Description', 'Provider', ?)
                 """, UUID.randomUUID(), systemId.value(), Timestamp.from(CREATED_AT));
+    }
+
+    private UUID seedDataset(String name) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("""
+                insert into ai_datasets (id, name, description, created_at)
+                values (?, ?, 'Dataset description', ?)
+                """, id, name, Timestamp.from(CREATED_AT));
+        return id;
+    }
+
+    private void associateDataset(AISystemId systemId, UUID datasetId) {
+        jdbc.update("""
+                insert into ai_system_datasets (system_id, dataset_id, associated_at)
+                values (?, ?, ?)
+                """, systemId.value(), datasetId, Timestamp.from(CREATED_AT));
     }
 
     private UUID seedAssessment(AISystemId systemId) {
@@ -220,7 +245,8 @@ class PostgreSQLAISystemGovernanceSummaryProjectionIntegrationTest {
             long findingsWithoutControls,
             long controlsWithoutImplementation,
             long implementationsWithoutEvidence,
-            long registeredModels
+            long registeredModels,
+            long datasets
     ) {
         assertAll(
                 () -> assertEquals(systemId, summary.aiSystemId()),
@@ -233,7 +259,8 @@ class PostgreSQLAISystemGovernanceSummaryProjectionIntegrationTest {
                 () -> assertEquals(findingsWithoutControls, summary.findingsWithoutControls()),
                 () -> assertEquals(controlsWithoutImplementation, summary.controlsWithoutImplementation()),
                 () -> assertEquals(implementationsWithoutEvidence, summary.implementationsWithoutEvidence()),
-                () -> assertEquals(registeredModels, summary.registeredModelCount())
+                () -> assertEquals(registeredModels, summary.registeredModelCount()),
+                () -> assertEquals(datasets, summary.datasetCount())
         );
     }
 

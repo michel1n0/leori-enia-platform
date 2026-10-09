@@ -15,7 +15,8 @@ public record AISystemGovernanceSummaryResponse(
         long findingsWithoutControls,
         long controlsWithoutImplementation,
         long implementationsWithoutEvidence,
-        long registeredModelCount
+        long registeredModelCount,
+        long datasetCount
 ) {
     static AISystemGovernanceSummaryResponse from(AISystemGovernanceSummary summary) {
         return new AISystemGovernanceSummaryResponse(
@@ -29,7 +30,8 @@ public record AISystemGovernanceSummaryResponse(
                 summary.findingsWithoutControls(),
                 summary.controlsWithoutImplementation(),
                 summary.implementationsWithoutEvidence(),
-                summary.registeredModelCount()
+                summary.registeredModelCount(),
+                summary.datasetCount()
         );
     }
 }

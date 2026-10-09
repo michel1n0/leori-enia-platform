@@ -33,6 +33,7 @@ class GetAISystemGovernanceSummaryUseCaseTest {
         AISystemGovernanceSummary result = useCase.execute(system.id());
 
         assertSame(summary, result);
+        assertEquals(11, result.datasetCount());
         assertEquals(1, systems.finds);
         assertEquals(0, systems.creates);
         assertEquals(1, summaries.summarizes);
@@ -86,7 +87,7 @@ class GetAISystemGovernanceSummaryUseCaseTest {
     }
 
     private AISystemGovernanceSummary summary(AISystemId id) {
-        return new AISystemGovernanceSummary(id, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+        return new AISystemGovernanceSummary(id, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);
     }
 
     private AISystem system() {
